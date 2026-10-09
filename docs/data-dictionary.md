@@ -1,6 +1,6 @@
 # TalentMatch — Data Dictionary
 
-This file was written by hand from the live database (`information_schema.columns`) after running migrations 001–013, so it matches the real schema. Triggers, functions and views are described in [advanced-features.md](advanced-features.md).
+This file was written by hand from the live database (`information_schema.columns`) after running migrations 001–014, so it matches the real schema. Triggers, functions and views are described in [advanced-features.md](advanced-features.md).
 
 **Legend:** **PK** primary key · **FK** foreign key · **UK** unique · **NN** NOT NULL · **ID** `GENERATED ALWAYS AS IDENTITY` (auto-number)
 
@@ -20,7 +20,7 @@ Every login account. Its role decides which profile table (if any) holds the ext
 | role | VARCHAR(20) | NN | | CHECK IN (`admin`, `recruiter`, `candidate`) |
 | is_active | BOOLEAN | NN | `TRUE` | Deactivate instead of delete |
 | created_at | TIMESTAMPTZ | NN | `now()` | |
-| last_login_at | TIMESTAMPTZ | | | Added by ALTER (009) |
+| last_login_at | TIMESTAMPTZ | | | Added by ALTER (009); set by `POST /api/auth/login`. Ignored by the updated_at trigger (014) |
 | updated_at | TIMESTAMPTZ | NN | `now()` | Added in 010; set automatically by trigger `set_updated_at()` |
 
 Extra: `UK (user_id, role)` is the target of the profile tables' composite FKs. Index `users_role_idx`.

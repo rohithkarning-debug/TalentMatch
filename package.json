@@ -9,14 +9,19 @@
     "start": "next start",
     "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.js",
     "db:reset": "node --env-file-if-exists=.env.local scripts/reset.js",
-    "db:seed": "node --env-file-if-exists=.env.local scripts/seed.js"
+    "db:seed": "node --env-file-if-exists=.env.local scripts/seed.js",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "node --env-file-if-exists=.env.local --test \"tests/unit/**/*.test.js\"",
+    "test:integration": "node --env-file-if-exists=.env.local --test --test-concurrency=1 \"tests/integration/**/*.test.js\""
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
+    "jose": "^6.2.12",
     "next": "16.4.0",
     "pg": "^8.23.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
