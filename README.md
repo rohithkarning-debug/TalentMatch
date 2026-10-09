@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 1 (database schema + seed data) is done. Application features have not been built yet.
+> Status: Stage 2 (triggers, stored functions, views, important queries, transaction demo) is done. Application features have not been built yet.
 
 ## Prerequisites
 
@@ -44,7 +44,14 @@ Open http://localhost:3000/api/health. You should see `"status":"ok"`, the Postg
 | `npm run db:seed` | Loads fictional demo data from `db/seed/seed.sql`. Safe to run more than once. |
 | `npm run db:reset` | **Destructive.** Drops all TalentMatch tables and data. It only works on the local Docker dev database and asks you to type the database name. Add `-- --yes` to skip the prompt. |
 
-Constraint tests: `Get-Content db/tests/stage1_constraint_tests.sql | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch`
+SQL scripts (PowerShell, from the project root):
+
+```powershell
+Get-Content db/tests/stage1_constraint_tests.sql  | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/tests/stage2_advanced_tests.sql    | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/queries/important_queries.sql      | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/demos/transaction_demo.sql         | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+```
 
 ## Demo accounts (local development only)
 
@@ -75,6 +82,7 @@ All demo accounts use the password **`TalentMatch@2026`**. Only its bcrypt hash 
 - [ER diagram](docs/er-diagram.md) (Mermaid)
 - [Relational schema](docs/relational-schema.md), including why PostgreSQL + pgvector share one database
 - [Data dictionary](docs/data-dictionary.md)
+- [Advanced SQL features](docs/advanced-features.md): triggers, functions, views, queries, transactions
 - [Test cases and results](docs/test-cases.md)
 
 ## Notes

@@ -1,6 +1,6 @@
 # TalentMatch — Relational Schema
 
-The schema is defined by `db/migrations/001–009` and has **16 tables** in the `public` schema. Migration bookkeeping lives separately in `tm_meta.schema_migrations`, so it is kept out of the application schema.
+The schema is defined by `db/migrations/001–013` and has **16 tables** in the `public` schema. Migration bookkeeping lives separately in `tm_meta.schema_migrations`, so it is kept out of the application schema.
 
 Notation: **underlined** = primary key (written here as <u>pk</u>), *italic* = foreign key, `UK` = unique.
 
@@ -153,5 +153,14 @@ Three composite FKs (`recruiters_user_fkey`, `candidates_user_fkey`, `jobs_recru
 - **1NF:** every column is atomic. Skills are rows in `candidate_skills` / `job_skills`, not comma-separated lists.
 - **2NF:** in tables with composite keys (`candidate_skills`, `job_skills`), every non-key column (proficiency, years_used, is_required, min_proficiency) depends on the *whole* key.
 - **3NF:** no column depends on another non-key column. For example, company details live in `companies`, not repeated in `jobs`.
-- **Deliberate denormalisation:** `jobs.applicant_count` duplicates `COUNT(applications)` for fast job listings. It will be kept correct by a trigger in Stage 2, and the seed sets it from the real rows.
+- **Deliberate denormalisation:** `jobs.applicant_count` duplicates `COUNT(applications)` for fast job listings. Trigger `trg_applications_applicant_count` (migration 011) keeps it correct on every INSERT/DELETE/job change, and a TRUNCATE trigger resets it.
 - **Role column in profiles:** `recruiters.role` and `candidates.role` are constant columns (`CHECK role = 'recruiter'`). They exist only so a composite FK can enforce the user's role at the database level, without a trigger.
+
+## 7. Triggers, functions and views (migrations 010–013)
+
+These are described in detail, with test output, in [advanced-features.md](advanced-features.md). In short:
+
+- **010:** an `updated_at` column on users, companies, recruiters, candidates, jobs, interviews and offers (applications already had one), kept current by the generic `set_updated_at()` BEFORE UPDATE trigger.
+- **011:** `applicant_count` maintenance, the status-transition guard, the automatic status history, and "new applications start as `applied`".
+- **012:** `generate_hiring_pipeline_report()` and `update_application_status()`.
+- **013:** `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary`.

@@ -1,6 +1,6 @@
 # TalentMatch — ER Diagram
 
-This diagram is written in Mermaid `erDiagram` syntax. GitHub and VS Code (with a Mermaid extension) render it automatically. It matches `db/migrations/001–009`.
+This diagram is written in Mermaid `erDiagram` syntax. GitHub and VS Code (with a Mermaid extension) render it automatically. It matches `db/migrations/001–013`.
 
 **Notation:** `||` means exactly one, `o|` zero or one, `|{` one or more, `o{` zero or more.
 `PK` = primary key, `FK` = foreign key, `UK` = unique.
@@ -44,6 +44,7 @@ erDiagram
         boolean is_active
         timestamptz created_at
         timestamptz last_login_at "added by ALTER (009)"
+        timestamptz updated_at "trigger-maintained (010)"
     }
     COMPANIES {
         bigint company_id PK
@@ -53,6 +54,7 @@ erDiagram
         varchar website
         text description
         timestamptz created_at
+        timestamptz updated_at "trigger-maintained (010)"
     }
     RECRUITERS {
         bigint user_id PK,FK "→ users (with role)"
@@ -61,6 +63,7 @@ erDiagram
         varchar designation
         varchar phone
         timestamptz created_at
+        timestamptz updated_at "trigger-maintained (010)"
     }
     CANDIDATES {
         bigint user_id PK,FK "→ users (with role)"
@@ -71,6 +74,7 @@ erDiagram
         numeric years_experience
         varchar highest_education
         timestamptz created_at
+        timestamptz updated_at "trigger-maintained (010)"
     }
     SKILLS {
         bigint skill_id PK
@@ -101,6 +105,7 @@ erDiagram
         date closes_at
         varchar employment_type "added by ALTER (009)"
         numeric min_experience_years "added by ALTER (009)"
+        timestamptz updated_at "trigger-maintained (010)"
     }
     JOB_SKILLS {
         bigint job_id PK,FK
@@ -152,6 +157,7 @@ erDiagram
         smallint rating
         text feedback
         timestamptz created_at
+        timestamptz updated_at "trigger-maintained (010)"
     }
     OFFERS {
         bigint offer_id PK
@@ -163,6 +169,7 @@ erDiagram
         varchar status
         timestamptz offered_at
         timestamptz responded_at
+        timestamptz updated_at "trigger-maintained (010)"
     }
     NOTIFICATIONS {
         bigint notification_id PK

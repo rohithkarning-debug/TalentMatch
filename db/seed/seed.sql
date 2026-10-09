@@ -13,6 +13,14 @@
 -- embeddings with cosine similarity in the embeddings stage.
 -- ============================================================================
 
+-- Historical import mode (see migration 011). This seed inserts applications
+-- that are already past 'applied' plus their real, dated status history, so
+-- the automatic history trigger and the "new applications start as 'applied'"
+-- guard must step aside. SET LOCAL only lasts until the end of the seed's
+-- transaction (scripts/seed.js wraps this file in BEGIN/COMMIT). The
+-- applicant_count trigger and the status-transition guard are NOT affected.
+SET LOCAL talentmatch.import_mode = 'on';
+
 -- ---------------------------------------------------------------- users ----
 INSERT INTO users (email, password_hash, full_name, role, created_at)
 SELECT v.email, '$2b$10$qYCMCdmT.qdfC2q8kd4WZuYcxb3.8emfuj2VIVZnakezYQb7rgtyC',
@@ -382,7 +390,10 @@ WHERE NOT EXISTS (
 );
 
 -- ------------------------------------------- derived: applicant_count ----
--- Until the Stage 2 trigger exists, set the denormalised counter from the
--- real application rows with a correlated subquery.
+-- Since migration 011 the trigger keeps applicant_count correct on every
+-- insert/delete. This correlated-subquery UPDATE is a safety net (e.g. data
+-- loaded before the trigger existed) and only touches rows that are wrong, so
+-- re-seeding does not needlessly bump jobs.updated_at.
 UPDATE jobs j
-SET applicant_count = (SELECT count(*) FROM applications a WHERE a.job_id = j.job_id);
+SET applicant_count = (SELECT count(*) FROM applications a WHERE a.job_id = j.job_id)
+WHERE j.applicant_count <> (SELECT count(*) FROM applications a WHERE a.job_id = j.job_id);

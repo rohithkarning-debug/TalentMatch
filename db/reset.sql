@@ -3,9 +3,14 @@
 -- Only for the local development database. Run it through `npm run db:reset`,
 -- which checks the target database before executing this file.
 -- ============================================================================
--- Tables are dropped children-first (reverse dependency order). CASCADE also
--- removes dependent objects such as indexes, constraints and (from Stage 2)
--- views and triggers. The pgvector extension itself is kept.
+-- Views first, then tables children-first (reverse dependency order). CASCADE
+-- also removes indexes, constraints and triggers. Functions are not owned by
+-- tables, so they are dropped explicitly at the end. The pgvector extension
+-- itself is kept.
+
+DROP VIEW IF EXISTS company_hiring_summary;
+DROP VIEW IF EXISTS candidate_application_view;
+DROP VIEW IF EXISTS recruiter_pipeline_view;
 
 DROP TABLE IF EXISTS job_embeddings             CASCADE;
 DROP TABLE IF EXISTS resume_embeddings          CASCADE;
@@ -23,6 +28,17 @@ DROP TABLE IF EXISTS candidates                 CASCADE;
 DROP TABLE IF EXISTS recruiters                 CASCADE;
 DROP TABLE IF EXISTS companies                  CASCADE;
 DROP TABLE IF EXISTS users                      CASCADE;
+
+-- Stored and trigger functions (migrations 010–012)
+DROP FUNCTION IF EXISTS update_application_status(BIGINT, VARCHAR, BIGINT, TEXT);
+DROP FUNCTION IF EXISTS generate_hiring_pipeline_report(BIGINT, DATE, DATE);
+DROP FUNCTION IF EXISTS guard_application_initial_status();
+DROP FUNCTION IF EXISTS log_application_status_change();
+DROP FUNCTION IF EXISTS guard_application_status_transition();
+DROP FUNCTION IF EXISTS reset_applicant_counts_on_truncate();
+DROP FUNCTION IF EXISTS maintain_applicant_count();
+DROP FUNCTION IF EXISTS is_valid_status_transition(VARCHAR, VARCHAR);
+DROP FUNCTION IF EXISTS set_updated_at();
 
 -- Forget applied migrations so `npm run db:migrate` rebuilds everything.
 DROP TABLE  IF EXISTS tm_meta.schema_migrations;
