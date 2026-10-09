@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 2 (triggers, stored functions, views, important queries, transaction demo) is done. Application features have not been built yet.
+> Status: Stage 3 (authentication + role-based access control) is done. Role dashboards and job/application features come next.
 
 ## Prerequisites
 
@@ -19,8 +19,10 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 # 1. Install dependencies
 npm install
 
-# 2. Create your local env file, then edit it and set a strong POSTGRES_PASSWORD
-#    (update the password inside DATABASE_URL to match)
+# 2. Create your local env file, then edit it:
+#    - set a strong POSTGRES_PASSWORD (and the same password inside DATABASE_URL)
+#    - set AUTH_JWT_SECRET to a random value (the placeholder is refused):
+#        node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 Copy-Item .env.example .env.local
 
 # 3. Start PostgreSQL + pgvector (Docker Desktop must be running)
@@ -35,6 +37,26 @@ npm run dev
 ```
 
 Open http://localhost:3000/api/health. You should see `"status":"ok"`, the PostgreSQL version, and the pgvector version.
+Then open http://localhost:3000 and sign in with a demo account below, or create a candidate account at `/register`.
+
+## Authentication
+
+Login uses an httpOnly session cookie that holds a signed JWT. Every API route checks the role on the server. Public registration creates **candidate** accounts only. Details: [docs/authentication.md](docs/authentication.md).
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/auth/register` | Create a candidate account (201 / 400 / 409) |
+| `POST /api/auth/login` | Log in (200 / 400 / 401 / 403) |
+| `POST /api/auth/logout` | Clear the session cookie (200) |
+| `GET /api/auth/me` | Current user `{id, email, fullName, role}` (200 / 401) |
+
+## Tests
+
+```powershell
+npm run test:unit          # auth unit tests (no server/DB needed)
+npm run build              # integration tests use the production build
+npm run test:integration   # starts the app on port 3100 and tests the real API + DB
+```
 
 ## Database scripts
 
@@ -83,6 +105,7 @@ All demo accounts use the password **`TalentMatch@2026`**. Only its bcrypt hash 
 - [Relational schema](docs/relational-schema.md), including why PostgreSQL + pgvector share one database
 - [Data dictionary](docs/data-dictionary.md)
 - [Advanced SQL features](docs/advanced-features.md): triggers, functions, views, queries, transactions
+- [Authentication and RBAC](docs/authentication.md)
 - [Test cases and results](docs/test-cases.md)
 
 ## Notes

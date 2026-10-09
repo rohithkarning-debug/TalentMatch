@@ -87,3 +87,62 @@ Results recorded on 2026-10-09 on a freshly reset, migrated and seeded database.
 | Re-running `db:seed` | jobs `updated_at` and `applicant_count` fingerprint unchanged |
 | Stage 1 constraint tests after Stage 2 | 8/8 still rejected |
 | `npm run build`; `GET /api/health` | Build passes; HTTP 200 |
+
+## Stage 3 — Authentication and RBAC
+
+Runner: Node's built-in `node:test` (no extra dependency). Details are in [authentication.md §9](authentication.md#9-tests).
+```powershell
+npm run test:unit
+npm run build
+npm run test:integration
+```
+Results recorded on 2026-10-09 against the production build (`next start`) and the seeded PostgreSQL database.
+
+### Unit tests (`tests/unit/auth.test.js`): 20 pass, 0 fail
+| Area | Tests |
+|---|---|
+| bcrypt | hash is `$2b$12$…` and never the plaintext; correct password accepted; wrong/empty rejected; random salt (two hashes differ); unknown user returns false; > 72 bytes refused |
+| JWT | round-trip id/role; payload has only `sub, role, iss, aud, iat, exp`; edited payload rejected; wrong secret rejected; expired rejected; `alg: none` rejected; wrong audience/garbage/empty rejected; missing, short or placeholder secret throws without leaking the value |
+| Cookie | httpOnly, SameSite=Lax, path `/`, 8 h; Secure only in production |
+| Zod | email lower-cased, name trimmed; `role`/`isAdmin` fields rejected; password rules; bad email / missing fields |
+
+### Integration tests (`tests/integration/auth.test.js`): 24 pass, 0 fail
+| # | Test | Expected | Result |
+|---|---|---|---|
+| R1 | Register valid candidate | 201, safe user only, cookie HttpOnly + SameSite=Lax + Path=/ + Max-Age=28800 + Secure; DB hash `$2b$12$`, bcrypt-verifies, role candidate, candidates row created | Pass |
+| R2 | Duplicate email, also in UPPER case | 409 `EMAIL_TAKEN` | Pass |
+| R3 | Bad email / short password / no digit / 80-byte password / blank name / missing fields | 400 `VALIDATION_ERROR` with field errors | Pass |
+| R4 | Body with `role: admin`, `role: recruiter`, `role: candidate`, `isAdmin: true` | 400, **no user row created** | Pass |
+| R5 | Form-encoded body / malformed JSON / `Origin: https://evil.example` | 415 / 400 / 403 `CROSS_ORIGIN` | Pass |
+| L1 | Seeded admin, recruiter, candidate with correct password | 200, correct role, cookie, no hash or "password" in body | Pass |
+| L2 | Email in upper case | 200 | Pass |
+| L3 | Wrong password vs unknown email | Both 401 `INVALID_CREDENTIALS`, identical bodies, no cookie | Pass |
+| L4 | Missing password / bad email / missing email | 400 | Pass |
+| L5 | `last_login_at` updated, `updated_at` unchanged | Migration 014 works | Pass |
+| L6 | Disable an account (`is_active = false`) | Login 403 `ACCOUNT_DISABLED`; its existing token now gives 401 | Pass |
+| M1 | `/me` without cookie | 401 `UNAUTHORIZED` | Pass |
+| M2 | `/me` with valid cookie | 200, keys exactly `id, email, fullName, role`; no hash/password text | Pass |
+| M3 | Garbage, tampered (role→admin), wrong-secret, `alg: none`, expired tokens | All 401 | Pass |
+| M4 | Validly signed token claiming `admin` for a candidate id; token for a non-existent user | 401 on `/me` and `/api/demo/admin` (DB role is the source of truth) | Pass |
+| O1 | Logout | 200; `tm_session=`, Max-Age=0, HttpOnly, Path=/; then `/me` 401 | Pass |
+| O2 | Logout without a session | 200 | Pass |
+| G1 | `/api/demo/{admin,recruiter,candidate}` anonymous | 401 ×3 | Pass |
+| G2–4 | Each seeded role on the three demo routes | 200 on its own role, 403 `FORBIDDEN` on the others | Pass |
+| W1 | `/api/demo/users/:id` | Own 200, other's 403 (candidate and recruiter), admin any 200, admin missing 404, `abc` 400, anonymous 401 | Pass |
+| S1 | Every recorded response body and header | No JWT secret, no DB password, no bcrypt hash | Pass |
+| S2 | Git-tracked/staged files | No JWT secret or DB password; `.env.local` not tracked | Pass |
+
+Test accounts (`authtest.<run>.<n>@test.example`) were deleted afterwards: 0 leftover rows, 17 users as seeded.
+
+### Negative control (proves the tests can fail)
+`if (roles) assertRole(user, roles)` in `withAuth` was temporarily commented out and the app rebuilt. The integration run then gave **21 pass / 3 fail**: the three role-guard tests (G2–G4). The file was restored byte-for-byte, rebuilt, and the run went back to 24/24.
+
+### Other Stage 3 checks
+| Check | Result |
+|---|---|
+| Fresh `db:reset → db:migrate (14) → db:seed`, then integration tests | 24/24 |
+| Stage 1 constraint tests | 8/8 still rejected |
+| Stage 2 advanced tests | 27/27 PASS |
+| `npm run build` | Passes; all `/api/*` routes dynamic (ƒ), `/login` and `/register` static, `/` partially prerendered |
+| `GET /api/health` | HTTP 200, PostgreSQL 17.11, pgvector 0.8.7 |
+| Page smoke test | `/` signed out shows the Sign in / Create account links; `/login` 2 inputs, `/register` 4 inputs, no role field; `/` with Meera's cookie shows "Signed in as … Meera Iyer" and Sign out; no hash in the HTML |

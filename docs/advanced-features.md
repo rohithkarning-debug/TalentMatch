@@ -25,7 +25,7 @@ A **trigger** is code the database runs automatically when rows change. Because 
 
 | Trigger | Table | When | Function | What it does |
 |---|---|---|---|---|
-| `trg_*_set_updated_at` (8) | users, companies, recruiters, candidates, jobs, applications, interviews, offers | BEFORE UPDATE | `set_updated_at()` | Sets `updated_at = now()` if any other column really changed |
+| `trg_*_set_updated_at` (8) | users, companies, recruiters, candidates, jobs, applications, interviews, offers | BEFORE UPDATE | `set_updated_at()` | Sets `updated_at = now()` if any other column really changed (users ignore `last_login_at` since migration 014, jobs ignore `applicant_count`) |
 | `trg_applications_applicant_count` | applications | AFTER INSERT / DELETE / UPDATE OF job_id | `maintain_applicant_count()` | +1 / −1 on `jobs.applicant_count` |
 | `trg_applications_truncate_count` | applications | AFTER TRUNCATE (statement) | `reset_applicant_counts_on_truncate()` | All counts back to 0 |
 | `trg_applications_initial_status` | applications | BEFORE INSERT | `guard_application_initial_status()` | New applications must start as `applied` |

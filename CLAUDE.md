@@ -109,6 +109,16 @@ uploads/                       uploaded resumes (gitignored)
 - `rank_candidates_for_job()` is deferred to the embeddings stage (Stage 5). No fake ranking.
 - `db/reset.sql` must drop every view and function too; update it when adding new ones.
 
+## Stage 3 conventions (auth / API)
+
+- Protected route handlers: `export const GET = withAuth({ roles: [ROLES.X] }, async (request, { user, params }) => ...)` from `src/lib/auth/guards.js`. Public routes: `withErrorHandling`. Never rely on UI hiding or proxy/middleware for authorization.
+- Ownership: load the owner id from the DATABASE, then `assertOwner` / `assertOwnerOrAdmin`. Never trust ids or roles from the request body.
+- Bodies: `readJsonBody(request, zodSchema)`; state-changing routes also call `assertSameOrigin(request)`. Use `z.strictObject` for request schemas.
+- Errors: throw `ApiError` / `badRequest` / `forbidden` / `notFound` (`src/lib/api/errors.js`). Response format `{ error: { code, message, details? } }`.
+- Only `toSafeUser()` shapes leave the server. Never select `password_hash` except in the login route.
+- Server Components read the user with `getCurrentUser()` **inside `<Suspense>`** (Cache Components is on). This Next.js is 16.x: read `node_modules/next/dist/docs/` before using framework APIs.
+- Tests: `node:test`. `npm run test:unit`; `npm run build && npm run test:integration` (port 3100, test accounts `authtest.*@test.example`, auto-cleaned).
+
 ---
 
 ## Mandatory requirements summary (from the DBMS Level 3 PDF)
