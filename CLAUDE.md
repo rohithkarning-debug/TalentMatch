@@ -2,8 +2,9 @@
 
 **TalentMatch — AI-Assisted Resume-to-Job Matching and Recruitment Management System**
 DBMS Experiential Learning, Level 3 mini-project (PES University, CSE, Section D).
-Team (2 members): Rohith Karning (PES1UG24AM229) and [Teammate Name].
-Dev OS: Windows 11 (PowerShell + Git Bash). Postgres runs in Docker.
+Team (2 members): Rohith Karning (PES1UG24AM229) and Saanvi Maharana (PES1UG24AM237).
+Dev OS: Windows 11 (PowerShell + Git Bash). Postgres runs in Docker on **localhost:5433** (a native Postgres already uses 5432).
+GitHub: https://github.com/rohithkarning-debug/TalentMatch.git
 
 Reference documents (source of truth for requirements):
 - `docs/reference/TalentMatch_Synopsis.docx` — approved synopsis
@@ -87,6 +88,17 @@ docs/                          project documentation (keep updated)
 docs/reference/                original synopsis + requirements (do not edit)
 uploads/                       uploaded resumes (gitignored)
 ```
+
+---
+
+## Database workflow (established in Stage 1)
+
+- `npm run db:migrate` applies `db/migrations/NNN_*.sql` once each, tracked with SHA-256 checksums in `tm_meta.schema_migrations` (kept out of `public` so it holds only the 16 domain tables). **Never edit an applied migration.** Add a new numbered file instead; the runner refuses changed files.
+- `npm run db:seed` loads `db/seed/seed.sql` and is idempotent. `npm run db:reset` is destructive and refuses anything except the local Docker dev DB (`scripts/lib/db-target.js`).
+- Scripts load `.env.local` via `node --env-file-if-exists`. `package.json` has `"type": "module"`.
+- Demo password for all seeded accounts: `TalentMatch@2026` (bcrypt hash only in SQL).
+- `applications.match_score` is NULL until real embeddings exist (rule 5).
+- Constraint tests: `db/tests/stage1_constraint_tests.sql`. Results go in `docs/test-cases.md`.
 
 ---
 
