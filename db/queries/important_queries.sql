@@ -1,0 +1,227 @@
+-- ============================================================================
+-- TalentMatch — Important SQL queries
+-- Read-only queries against the seeded schema. Each one is preceded by:
+--   DEMONSTRATES: the SQL concept(s)   RETURNS: what you get back
+--   WHY: how TalentMatch uses it
+--
+-- Run all (PowerShell, from the project root):
+--   Get-Content db/queries/important_queries.sql | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+-- ============================================================================
+\set ON_ERROR_STOP on
+\pset pager off
+
+\echo '\n=== Q1  Open jobs with company and recruiter ==='
+-- DEMONSTRATES: INNER JOIN, LEFT JOIN, WHERE, ORDER BY (served by the partial
+--               index jobs_open_posted_at_idx).
+-- RETURNS: every open job, newest first, with its company and recruiter.
+-- WHY: the candidate "Browse jobs" page.
+SELECT j.job_id, j.title, c.name AS company, u.full_name AS recruiter,
+       j.location, j.work_mode, j.posted_at::date AS posted
+FROM jobs j
+JOIN companies c       ON c.company_id = j.company_id
+LEFT JOIN users u      ON u.user_id = j.recruiter_id   -- recruiter may be NULL
+WHERE j.status = 'open'
+ORDER BY j.posted_at DESC;
+
+\echo '\n=== Q2  Applications per status (aggregate + GROUP BY) ==='
+-- DEMONSTRATES: GROUP BY, COUNT, ROUND, window function over an aggregate.
+-- RETURNS: how many applications are in each stage and the share of the total.
+-- WHY: the top of the admin dashboard's hiring funnel.
+SELECT status,
+       count(*)                                              AS applications,
+       round(100.0 * count(*) / sum(count(*)) OVER (), 1)    AS pct_of_total
+FROM applications
+GROUP BY status
+ORDER BY array_position(ARRAY['applied','shortlisted','interviewed','offered','rejected'], status::text);
+
+\echo '\n=== Q3  Jobs with at least 3 applicants (GROUP BY + HAVING) ==='
+-- DEMONSTRATES: JOIN, GROUP BY, HAVING (filter on an aggregate), ORDER BY.
+-- RETURNS: popular jobs and their applicant numbers.
+-- WHY: recruiters prioritise screening for the most popular postings.
+SELECT c.name AS company, j.title, count(a.application_id) AS applicants
+FROM jobs j
+JOIN companies c     ON c.company_id = j.company_id
+JOIN applications a  ON a.job_id = j.job_id
+GROUP BY c.name, j.job_id, j.title
+HAVING count(a.application_id) >= 3
+ORDER BY applicants DESC, j.title;
+
+\echo '\n=== Q4  Salary statistics per company (aggregate functions) ==='
+-- DEMONSTRATES: MIN, MAX, AVG, COUNT with FILTER, GROUP BY.
+-- RETURNS: salary range and average midpoint of each company's postings (INR/yr).
+-- WHY: admin analytics; candidates comparing companies.
+SELECT c.name AS company,
+       count(*)                                   AS jobs,
+       count(*) FILTER (WHERE j.status = 'open')  AS open_jobs,
+       min(j.salary_min)                          AS lowest_min,
+       max(j.salary_max)                          AS highest_max,
+       round(avg((j.salary_min + j.salary_max) / 2))  AS avg_midpoint
+FROM jobs j
+JOIN companies c ON c.company_id = j.company_id
+GROUP BY c.name
+ORDER BY avg_midpoint DESC;
+
+\echo '\n=== Q5  Candidates who have NOT applied anywhere (NOT EXISTS) ==='
+-- DEMONSTRATES: NOT EXISTS anti-join.
+-- RETURNS: registered candidates with zero applications.
+-- WHY: re-engagement: suggest matching jobs to inactive candidates.
+-- (With the current seed every candidate has applied, so this returns 0 rows,
+--  which is itself the correct answer.)
+SELECT u.user_id, u.full_name, cd.headline
+FROM candidates cd
+JOIN users u ON u.user_id = cd.user_id
+WHERE NOT EXISTS (SELECT 1 FROM applications a WHERE a.candidate_id = cd.user_id);
+
+\echo '\n=== Q6  Open jobs that nobody has applied to yet (NOT EXISTS) ==='
+-- DEMONSTRATES: NOT EXISTS on another table.
+-- RETURNS: open/draft postings with no applications.
+-- WHY: recruiters see which postings need better descriptions or promotion.
+SELECT j.job_id, j.title, j.status
+FROM jobs j
+WHERE j.status IN ('open', 'draft')
+  AND NOT EXISTS (SELECT 1 FROM applications a WHERE a.job_id = j.job_id);
+
+\echo '\n=== Q7  Candidates with at least one REQUIRED skill of the ML Engineer job (IN + subquery) ==='
+-- DEMONSTRATES: IN (subquery), nested subquery, DISTINCT.
+-- RETURNS: candidates who list any skill the job marks as required.
+-- WHY: a simple keyword-style shortlist, compared later with semantic ranking.
+SELECT DISTINCT u.full_name, cd.headline
+FROM candidate_skills cs
+JOIN candidates cd ON cd.user_id = cs.candidate_id
+JOIN users u       ON u.user_id = cs.candidate_id
+WHERE cs.skill_id IN (
+        SELECT js.skill_id FROM job_skills js
+        WHERE js.is_required
+          AND js.job_id = (SELECT job_id FROM jobs WHERE title = 'Machine Learning Engineer'))
+ORDER BY u.full_name;
+
+\echo '\n=== Q8  Required-skill coverage per applicant (correlated subqueries) ==='
+-- DEMONSTRATES: correlated subqueries (the inner query uses a.job_id and
+--               a.candidate_id from the outer row), JOIN.
+-- RETURNS: for each application, how many of the job's required skills the
+--          candidate has, at or above the required proficiency.
+-- WHY: explainable "skills matched 3/3" badge next to the semantic match score.
+SELECT j.title, u.full_name, a.status,
+       (SELECT count(*)
+          FROM job_skills js
+          JOIN candidate_skills cs ON cs.skill_id = js.skill_id
+                                  AND cs.candidate_id = a.candidate_id
+                                  AND cs.proficiency >= js.min_proficiency
+         WHERE js.job_id = a.job_id AND js.is_required)               AS required_met,
+       (SELECT count(*) FROM job_skills js
+         WHERE js.job_id = a.job_id AND js.is_required)               AS required_total
+FROM applications a
+JOIN jobs j  ON j.job_id = a.job_id
+JOIN users u ON u.user_id = a.candidate_id
+ORDER BY j.title, required_met DESC, u.full_name;
+
+\echo '\n=== Q9  Candidates with above-average experience (scalar subquery) ==='
+-- DEMONSTRATES: scalar subquery in WHERE and SELECT, AVG.
+-- RETURNS: candidates whose experience exceeds the platform average.
+-- WHY: helps recruiters find senior profiles quickly.
+SELECT u.full_name, cd.years_experience,
+       (SELECT round(avg(years_experience), 2) FROM candidates) AS platform_avg
+FROM candidates cd
+JOIN users u ON u.user_id = cd.user_id
+WHERE cd.years_experience > (SELECT avg(years_experience) FROM candidates)
+ORDER BY cd.years_experience DESC;
+
+\echo '\n=== Q10 Most in-demand skills across jobs vs. supply among candidates ==='
+-- DEMONSTRATES: LEFT JOIN + GROUP BY with COUNT(DISTINCT) on two M:N tables,
+--               HAVING.
+-- RETURNS: skills required by 2+ jobs, with how many candidates have them.
+-- WHY: shows skill gaps (high demand, low supply) on the admin dashboard.
+SELECT s.name AS skill, s.category,
+       count(DISTINCT js.job_id)        AS jobs_requiring,
+       count(DISTINCT cs.candidate_id)  AS candidates_with_skill
+FROM skills s
+JOIN job_skills js            ON js.skill_id = s.skill_id AND js.is_required
+LEFT JOIN candidate_skills cs ON cs.skill_id = s.skill_id
+GROUP BY s.skill_id, s.name, s.category
+HAVING count(DISTINCT js.job_id) >= 2
+ORDER BY jobs_requiring DESC, candidates_with_skill;
+
+\echo '\n=== Q11 Average days spent between stages (history analytics) ==='
+-- DEMONSTRATES: window function LAG over the audit table, date arithmetic,
+--               GROUP BY on derived columns.
+-- RETURNS: for each transition (e.g. applied -> shortlisted), how many times
+--          it happened and the average days it took.
+-- WHY: "time to shortlist" / "time to offer" hiring KPIs.
+WITH steps AS (
+    SELECT h.old_status, h.new_status,
+           h.changed_at - lag(h.changed_at) OVER (PARTITION BY h.application_id
+                                                  ORDER BY h.changed_at) AS took
+    FROM application_status_history h
+)
+SELECT old_status || ' -> ' || new_status AS transition,
+       count(*) AS times,
+       round(avg(extract(epoch FROM took) / 86400)::numeric, 1) AS avg_days
+FROM steps
+WHERE old_status IS NOT NULL
+GROUP BY old_status, new_status
+ORDER BY avg_days;
+
+\echo '\n=== Q12 Recruiter workload (JOIN + GROUP BY + ORDER BY) ==='
+-- DEMONSTRATES: multi-table JOIN, COUNT(DISTINCT), FILTER, ORDER BY.
+-- RETURNS: per recruiter: jobs owned, applications to review, interviews.
+-- WHY: admins balance work between recruiters.
+SELECT u.full_name AS recruiter, c.name AS company,
+       count(DISTINCT j.job_id)                                         AS jobs,
+       count(a.application_id)                                          AS applications,
+       count(a.application_id) FILTER (WHERE a.status = 'applied')      AS awaiting_review,
+       (SELECT count(*) FROM interviews i WHERE i.interviewer_id = r.user_id) AS interviews
+FROM recruiters r
+JOIN users u          ON u.user_id = r.user_id
+JOIN companies c      ON c.company_id = r.company_id
+LEFT JOIN jobs j      ON j.recruiter_id = r.user_id
+LEFT JOIN applications a ON a.job_id = j.job_id
+GROUP BY r.user_id, u.full_name, c.name
+ORDER BY awaiting_review DESC, applications DESC;
+
+\echo '\n=== Q13 Upcoming interviews (JOIN + date filter + ORDER BY) ==='
+-- DEMONSTRATES: 4-table JOIN, timestamp comparison with now(), ORDER BY.
+-- RETURNS: scheduled interviews in the future, soonest first.
+-- WHY: recruiter and candidate dashboards ("Your next interview").
+SELECT i.scheduled_at, i.round_no, i.mode, cu.full_name AS candidate, j.title AS job
+FROM interviews i
+JOIN applications a ON a.application_id = i.application_id
+JOIN jobs j         ON j.job_id = a.job_id
+JOIN users cu       ON cu.user_id = a.candidate_id
+WHERE i.status = 'scheduled' AND i.scheduled_at >= now()
+ORDER BY i.scheduled_at;
+
+\echo '\n=== Q14 Each candidate''s most recent application (correlated subquery with MAX) ==='
+-- DEMONSTRATES: correlated subquery comparing each row with MAX of its group.
+-- RETURNS: one row per candidate: their latest application and its status.
+-- WHY: candidate list in the admin panel shows "last activity".
+SELECT u.full_name, j.title, a.status, a.applied_at::date
+FROM applications a
+JOIN users u ON u.user_id = a.candidate_id
+JOIN jobs j  ON j.job_id  = a.job_id
+WHERE a.applied_at = (SELECT max(a2.applied_at) FROM applications a2
+                       WHERE a2.candidate_id = a.candidate_id)
+ORDER BY a.applied_at DESC;
+
+\echo '\n=== Q15 Interview rating vs. outcome (aggregate on completed interviews) ==='
+-- DEMONSTRATES: JOIN, AVG, COUNT, GROUP BY, HAVING.
+-- RETURNS: average interview rating grouped by the application's current status.
+-- WHY: checks whether interview scores predict who receives offers.
+SELECT a.status, count(*) AS completed_interviews, round(avg(i.rating), 2) AS avg_rating
+FROM interviews i
+JOIN applications a ON a.application_id = i.application_id
+WHERE i.status = 'completed'
+GROUP BY a.status
+HAVING count(*) >= 1
+ORDER BY avg_rating DESC;
+
+\echo '\n=== Q16 Using the views and the report function ==='
+-- DEMONSTRATES: querying views like tables; calling a set-returning function.
+-- RETURNS: company summary (view with HAVING) and one company's funnel report.
+-- WHY: these are what the dashboards will call through the API.
+SELECT company_name, total_jobs, open_jobs, total_applications, unique_candidates,
+       rejection_rate_pct, offers_made
+FROM company_hiring_summary ORDER BY total_applications DESC;
+
+SELECT job_title, total_applications, shortlist_rate_pct, offer_rate_pct, avg_days_to_shortlist
+FROM generate_hiring_pipeline_report(
+       (SELECT company_id FROM companies WHERE name = 'Nimbus Analytics Pvt Ltd'));

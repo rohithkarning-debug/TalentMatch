@@ -100,6 +100,15 @@ uploads/                       uploaded resumes (gitignored)
 - `applications.match_score` is NULL until real embeddings exist (rule 5).
 - Constraint tests: `db/tests/stage1_constraint_tests.sql`. Results go in `docs/test-cases.md`.
 
+## Stage 2 conventions (triggers / functions / views)
+
+- Application status changes should go through `update_application_status(app_id, status, actor_id, note)`. If you update directly, first `set_config('talentmatch.actor_id', …, true)` and `set_config('talentmatch.status_note', …, true)` so the history trigger records who and why.
+- Allowed transitions: applied→shortlisted→interviewed→offered, any active stage→rejected; rejected is final; new rows must start as `applied`. The single source of truth is `is_valid_status_transition()`.
+- `talentmatch.import_mode = 'on'` is ONLY for `db/seed/seed.sql` (historical import). App code must never set it.
+- `jobs.applicant_count` and every `updated_at` are trigger-maintained. Never set them from the app.
+- `rank_candidates_for_job()` is deferred to the embeddings stage (Stage 5). No fake ranking.
+- `db/reset.sql` must drop every view and function too; update it when adding new ones.
+
 ---
 
 ## Mandatory requirements summary (from the DBMS Level 3 PDF)
