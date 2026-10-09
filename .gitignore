@@ -1,0 +1,32 @@
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.DS_Store
+Thumbs.db
+*.pem
+
+# debug
+npm-debug.log*
+
+# env files — real secrets live in .env.local; only the template is committed
+.env*
+!.env.example
+
+# uploaded resumes
+/uploads/
+
+# vercel
+.vercel
