@@ -2,12 +2,17 @@
   "name": "talentmatch",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.js",
+    "db:reset": "node --env-file-if-exists=.env.local scripts/reset.js",
+    "db:seed": "node --env-file-if-exists=.env.local scripts/seed.js"
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
     "next": "16.4.0",
     "pg": "^8.23.1",
     "react": "19.3.0",
