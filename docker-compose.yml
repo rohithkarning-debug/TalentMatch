@@ -1,0 +1,27 @@
+# PostgreSQL 17 + pgvector for TalentMatch.
+# Credentials come from .env.local (never hardcoded). Run with:
+#   docker compose --env-file .env.local up -d
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: talentmatch-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env.local}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.local}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env.local}
+    ports:
+      # Host port defaults to 5433 because a native PostgreSQL may already use 5432.
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - talentmatch_pgdata:/var/lib/postgresql/data
+      # Scripts here run once, only when the data volume is first created.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  talentmatch_pgdata:
