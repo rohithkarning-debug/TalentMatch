@@ -4,12 +4,14 @@ import { ApiError } from "@/lib/api/errors";
 import { ROLES, withAuth } from "@/lib/auth/guards";
 import { getPool, query } from "@/lib/db";
 import { extractResumeText, lockCandidateResumes, MAX_RESUME_BYTES, persistResume, removeStoredResume, safeDisplayName } from "@/lib/candidate/resumes";
+import { tryEmbedResume } from "@/lib/vector-store";
 
 export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (_request, { user }) => {
   const { rows } = await query(
     `SELECT resume_id AS id, file_name AS "fileName", mime_type AS "mimeType", file_size_bytes AS "fileSizeBytes",
-            is_primary AS "isPrimary", uploaded_at AS "uploadedAt"
-       FROM resumes WHERE candidate_id = $1 ORDER BY uploaded_at DESC, resume_id DESC`, [user.id]);
+            is_primary AS "isPrimary", uploaded_at AS "uploadedAt",
+            EXISTS (SELECT 1 FROM resume_embeddings re WHERE re.resume_id = r.resume_id) AS "isEmbedded"
+       FROM resumes r WHERE candidate_id = $1 ORDER BY uploaded_at DESC, resume_id DESC`, [user.id]);
   return NextResponse.json({ resumes: rows }, { headers: { "Cache-Control": "no-store" } });
 });
 
@@ -40,6 +42,7 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
   }
   const stored = await persistResume(buffer, displayName);
   const client = await getPool().connect();
+  let resume;
   try {
     await client.query("BEGIN");
     await lockCandidateResumes(client, user.id);
@@ -51,10 +54,15 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
        RETURNING resume_id AS id, file_name AS "fileName", mime_type AS "mimeType", file_size_bytes AS "fileSizeBytes", is_primary AS "isPrimary", uploaded_at AS "uploadedAt"`,
       [user.id, displayName, stored.storagePath, mimeType, buffer.length, extractedText, primary.rowCount === 0]);
     await client.query("COMMIT");
-    return NextResponse.json({ resume: rows[0] }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    resume = rows[0];
   } catch (err) {
     await client.query("ROLLBACK");
     await removeStoredResume(stored.storagePath).catch(() => {});
     throw err;
   } finally { client.release(); }
+  // Embedding runs after COMMIT, outside the transaction: the upload is
+  // already saved, so a model failure only leaves it "not embedded" (fixed
+  // later by `npm run db:embed`) instead of losing the resume.
+  const isEmbedded = await tryEmbedResume(resume.id, extractedText);
+  return NextResponse.json({ resume: { ...resume, isEmbedded } }, { status: 201, headers: { "Cache-Control": "no-store" } });
 });
