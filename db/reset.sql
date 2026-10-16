@@ -29,7 +29,8 @@ DROP TABLE IF EXISTS recruiters                 CASCADE;
 DROP TABLE IF EXISTS companies                  CASCADE;
 DROP TABLE IF EXISTS users                      CASCADE;
 
--- Stored and trigger functions (migrations 010–012, 015)
+-- Stored and trigger functions (migrations 010–012, 015, 016)
+DROP FUNCTION IF EXISTS compute_match_score(BIGINT, BIGINT);
 DROP FUNCTION IF EXISTS rank_candidates_for_job(BIGINT, INTEGER, BOOLEAN);
 DROP FUNCTION IF EXISTS update_application_status(BIGINT, VARCHAR, BIGINT, TEXT);
 DROP FUNCTION IF EXISTS generate_hiring_pipeline_report(BIGINT, DATE, DATE);
