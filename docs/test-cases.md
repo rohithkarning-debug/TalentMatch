@@ -284,7 +284,7 @@ npm run test:unit
 npm run build
 npm run test:integration
 ```
-Results recorded on 2026-10-16: unit **44 pass, 0 fail** (20 auth + 15 embeddings + 9 recruiter validation). Integration **74 pass, 0 fail** (24 auth + 17 candidate + 13 matching + 20 recruiter). No score is hard-coded; each one is recomputed in SQL.
+Results recorded on 2026-10-16: unit **45 pass, 0 fail** (20 auth + 15 embeddings + 10 recruiter validation). Integration **74 pass, 0 fail** (24 auth + 17 candidate + 13 matching + 20 recruiter). No score is hard-coded; each one is recomputed in SQL.
 
 ### Full flow
 | # | Test | Expected | Actual | Result |
