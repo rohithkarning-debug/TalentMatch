@@ -456,7 +456,7 @@ EXCEPT
 SELECT cs.skill_id FROM candidate_skills cs WHERE cs.candidate_id = $candidate;
 ```
 
-**Q28 — Atomicity proof.** Inside one block, `update_application_status(…, 'offered')` succeeds and a second offer then violates `UNIQUE (application_id)`; the status change, its trigger-written history row and its notification are all undone (`before` = `after`). *In the final run Q28 (and Q27) stop earlier, at the migration 023 rule; see the open issue in §13.*
+**Q28 — Atomicity proof.** Inside one block, `update_application_status(…, 'offered')` succeeds and a second offer then violates `UNIQUE (application_id)`; the status change, its trigger-written history row and its notification are all undone (`before` = `after`).
 
 **Q37 — Per-company dashboard table.** LEFT JOIN to the `company_hiring_summary` view (so companies hidden by its HAVING still appear), pre-aggregated derived tables for offers and ratings (joining them directly would multiply rows), `nullif` to avoid division by zero, and a scalar subquery for the "above average" flag. Acceptance rate = accepted ÷ (accepted + declined).
 
@@ -577,10 +577,8 @@ Final run on 16 Oct 2026 — Windows 11, Node.js 22.19.0, Next.js 16.4.0 product
 | Integration tests | `npm run test:integration` | **147 tests, 35 suites, 147 pass, 0 fail** (96 s); 0 `@test.example` users left afterwards |
 | Constraint tests (SQL) | `db/tests/stage1_constraint_tests.sql` | 8 of 8 invalid writes rejected by the intended constraint, each rolled back |
 | Advanced-feature tests (SQL) | `db/tests/stage2_advanced_tests.sql` | 27 PASS lines (T1–T13), "All Stage 2 tests passed" |
-| Important queries | `db/queries/important_queries.sql` with `ON_ERROR_STOP` | **39 of 41 run; Q27 and Q28 fail** (see the note below) |
+| Important queries | `db/queries/important_queries.sql` with `ON_ERROR_STOP` | Q1–Q41 ran, exit code 0 |
 | Transaction demo | `db/demos/transaction_demo.sql` | COMMIT part persisted then cleaned up, ROLLBACK and SAVEPOINT parts undone; Data Analyst `applicant_count` 3 before and 3 after |
-
-**Open issue — Q27 and Q28 in `important_queries.sql`.** Both queries make an offer on Sneha Kulkarni's *Frontend Developer* application (id 14). Since migration 023, an offer is refused while an interview round is still scheduled, and the seed gives that application a scheduled round 2. The database correctly refuses with *"Complete or cancel the scheduled interview before making an offer."*, so the rule works, but the two demonstration queries no longer run and `ON_ERROR_STOP` stops the file at Q27. The queries need to use an application without a scheduled round (or cancel the round first inside their rolled-back transaction). Q1–Q26 and Q29–Q41 run without errors. The same atomicity is still proven by the integration tests (forced rollbacks in `pipeline.test.js`).
 
 **What the tests cover:**
 
