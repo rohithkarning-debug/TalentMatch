@@ -273,3 +273,83 @@ Full ranked lists with scores: [vector-design.md §7](vector-design.md#real-resu
 | `important_queries.sql` (now 22 queries, Q20–Q22 added) | Whole file runs with `ON_ERROR_STOP=1`, exit code 0 |
 | Test data cleanup | After the run: 12 resumes / 12 resume embeddings / 8 jobs / 8 job embeddings, 0 `@test.example` users |
 | `npm run build` | Passes; `/api/recruiter/jobs/[jobId]/matches` is dynamic (ƒ). The existing Turbopack warning from `src/lib/candidate/resumes.js:76` is unchanged |
+
+## Stage 6 — Recruiter module and applications
+
+Tests: `tests/unit/recruiter-validation.test.js` (job and status schemas), `tests/integration/recruiter.test.js` (production build on port 3103, real database, real embedding model). New migrations: `016_compute_match_score.sql`, `017_applications_updated_at_ignore_match_score.sql`.
+```powershell
+npm run db:migrate
+npm run db:embed
+npm run test:unit
+npm run build
+npm run test:integration
+```
+Results recorded on 2026-10-16: unit **44 pass, 0 fail** (20 auth + 15 embeddings + 9 recruiter validation). Integration **74 pass, 0 fail** (24 auth + 17 candidate + 13 matching + 20 recruiter). No score is hard-coded; each one is recomputed in SQL.
+
+### Full flow
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| R1 | Meera posts an open job with 2 required + 1 nice-to-have skill | 201; company = Nimbus, recruiter = Meera, `applicant_count` 0; `job_embeddings` row (MiniLM, 384 dims) | As expected | Pass |
+| R2 | New candidate uploads a .txt resume and applies with it | 201 `applied`; `match_score` = stored value = `1 - (resume <=> job)` within 0.00005; `applicant_count` +1 (trigger) | e.g. stored 0.8106, recomputed 0.810638…; count 0 → 1 | Pass |
+| R3 | Rows written by the apply transaction | History `(NULL → applied, changed_by = candidate)`; 1 `application_submitted` notification for Meera | As expected | Pass |
+| R4 | Meera shortlists via `PATCH /api/recruiter/applications/:id` | 200; trigger-written history `applied → shortlisted`, `changed_by` Meera, note kept; candidate gets a `status_changed` notification | As expected | Pass |
+| R5 | Recruiter applicants list, My Jobs, matches API, candidate My Applications | Same score everywhere; matched `[Python]` of required `[NLP, Python]`; `applicantCount` 1, `shortlisted` 1; history `[applied, shortlisted]` | As expected | Pass |
+
+### Transaction rollback
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| T1 | `applyToJob()` with a notification whose title is blank (fails **after** the application INSERT) | Error `23514 notifications_title_not_blank_check`; 0 application rows, 0 history rows, `applicant_count` unchanged; the same application then succeeds (+1) | As expected | Pass |
+| T1-neg | Negative control: the same statements without BEGIN/ROLLBACK | Shows the half-done state the test would catch | 1 application row left, count 1 → 2 (then cleaned up) | As expected |
+
+### Invalid transitions (database-enforced)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| S1 | API `applied → offered` (skipping stages) | 409 `INVALID_TRANSITION`, message `… applied -> offered …` | As expected | Pass |
+| S2 | Reject, then `rejected → offered` by direct SQL `UPDATE`, by `update_application_status()` and by the API | SQL error `23514` "Invalid application status transition: rejected -> offered" ×2; API 409 with the DB hint "… rejected is final."; status and history count unchanged | As expected | Pass |
+
+### Permissions and application rules
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| P1 | Kavya (Kestrel) on a Nimbus job: GET, PATCH title, PATCH status, DELETE, applicants list | 403 ×5; job unchanged; not in Kavya's My Jobs | As expected | Pass |
+| P2 | Create a job with `companyId` / `recruiterId` in the body | 400 (strict schema) | 400 | Pass |
+| P3 | Same candidate applies twice | 201, then 409 `ALREADY_APPLIED` (UNIQUE constraint); count unchanged | As expected | Pass |
+| P4 | Candidate PATCHes an application status / no cookie / Kavya | 403 / 401 / 403; status still `applied` | As expected | Pass |
+| P5 | Apply to a **closed** job / a **draft** job | 409 `JOB_NOT_OPEN` / 404; count unchanged; draft job page 404 for candidates; 0 rows | As expected | Pass |
+| P6 | Apply with another candidate's resume | 404 | 404 | Pass |
+
+### Job CRUD
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| J1 | Edit title + skills; then status-only change | Re-embedded (`source_hash` changes); status change keeps the hash | As expected | Pass |
+| J2 | Description of 9 chars / `closesAt` 2020-01-01 / unknown skill id | 400 field error / 400 `jobs_closes_after_posted_check` / 400 `job_skills_skill_fkey`; nothing saved (rolled back) | As expected | Pass |
+| J3 | Delete a draft job with no applications; delete a job with applications | 200, job + embedding + skills gone (CASCADE) / 409 `JOB_HAS_APPLICATIONS` (FK `ON DELETE RESTRICT`) | As expected | Pass |
+
+### Skill gap (`job_skills EXCEPT candidate_skills`)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| G1 | Seeded Aman, ML Engineer job | have: Python (level 2 of 4, below level); missing: NLP, PyTorch | As expected | Pass |
+| G2 | Seeded Aditi, ML Engineer job | have: NLP, PyTorch, Python (all at level); missing: none | As expected | Pass |
+| G3 | have ∪ missing vs the job's required skills; API `GET /api/candidate/jobs/:id` | Exactly the required set; API returns identical lists and Aman's application (`rejected`) | As expected | Pass |
+
+### Unit tests (validation)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| V1 | `jobCreateSchema` defaults; skill defaults | draft, onsite, full_time, INR, 1 opening, 0 yrs, no salary, `[]`; `isRequired` true, `minProficiency` 3 | As expected | Pass |
+| V2 | Explicit `salaryMin: null` | Stays `null` (regression test: it was coerced to 0, found in the browser check; fails without the fix) | As expected | Pass |
+| V3 | 11 bad inputs (short description, blank title, bad status, max < min salary, 0 openings, 1.25 years, bad date, duplicate skill, level 6, `companyId`, `applicantCount`) | All rejected | As expected | Pass |
+| V4 | `jobUpdateSchema` status-only / `{}` / `recruiterId`; `applicationStatusSchema` five statuses / `hired` / `changedBy` | ok / rejected / rejected; ok / rejected / rejected | As expected | Pass |
+
+### Browser check (real headless Chrome, production build, 2026-10-16)
+A scratch script drove Chrome over the DevTools protocol, typing into the real forms, clicking, and uploading a file. 12/12 checks passed:
+Meera logs in → My Jobs with applicant counts → posts a job with Python + NLP through the form → job detail says "embedded", salary "not disclosed" → a new candidate registers, uploads a .txt resume, adds Python → job page skill gap shows **have Python (1/2), missing NLP (1/2)** → Apply → "Match score: 0.7461" → My Applications shows the score and "Application submitted" → Meera's My Jobs shows **1** applicant → Ranked applicants shows 0.7461 → shortlist with a note → history shows the note → choose **offered** → red alert "Invalid application status transition: shortlisted -> offered (application 42)" + the allowed moves → Search all candidates table (13 ranked candidates, matched/required skill chips) → Close job. The UI score 0.7461 was checked in SQL: `1 - (a <=> b)` = 0.746140…, `applicant_count` 1.
+
+**Bug found by the browser check and fixed:** an empty salary was saved as ₹0 because `z.coerce.number()` turned `null` into 0 (commit "Fix empty job salary being saved as 0 instead of NULL"; regression test V2).
+
+### Other Stage 6 checks
+| Check | Result |
+|---|---|
+| `npm run db:migrate` | 016 and 017 applied; 15 skipped |
+| `npm run db:embed` (first / second run) | 16 seeded application scores filled in / 0 (idempotent); `applications.updated_at` checksum identical before and after (migration 017) |
+| `important_queries.sql` (now 26 queries) | Whole file runs with `ON_ERROR_STOP=1`, exit code 0; Q23 shows count 3 → 4 inside the transaction, 3 after ROLLBACK; Q25 max difference 0.00004318 |
+| Test data cleanup | After the runs: 8 jobs, 16 applications, 0 `@test.example` users |
+| `npm run build` | Passes; all new API routes dynamic (ƒ), new pages partial prerender (◐). The existing Turbopack warning from `src/lib/candidate/resumes.js:76` is unchanged |
