@@ -1,4 +1,4 @@
-# TalentMatch — Advanced SQL Features (Stages 2, 5 and 6)
+# TalentMatch — Advanced SQL Features (Stages 2, 5, 6 and 7)
 
 Migrations: `010_updated_at_triggers.sql`, `011_application_triggers.sql`, `012_functions.sql`, `013_views.sql`.
 Tests: `db/tests/stage2_advanced_tests.sql` · Queries: `db/queries/important_queries.sql` · Transaction demo: `db/demos/transaction_demo.sql`.
@@ -7,10 +7,10 @@ All outputs below are real, captured on 2026-10-09 from PostgreSQL 17.11 running
 
 | Requirement concept (PDF §7) | Where |
 |---|---|
-| Triggers | 13 triggers (010, 011) |
+| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9) |
 | Stored procedures / functions | `generate_hiring_pipeline_report`, `update_application_status`, `is_valid_status_transition` (+ trigger functions); Stage 5: `rank_candidates_for_job`; Stage 6: `compute_match_score` (016) |
 | Views | `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary` |
-| Transactions | Stage 6 **apply to job** (`src/lib/applications.js`, §7), job create/edit/delete, resume upload, `update_application_status` (atomic), seed and migrations, `transaction_demo.sql` |
+| Transactions | Stage 7 **make offer**, accept/decline, withdraw, **schedule interview** (§10, §11; Q27, Q28), Stage 6 **apply to job** (`src/lib/applications.js`, §7), job create/edit/delete, resume upload, `update_application_status` (atomic), seed and migrations, `transaction_demo.sql` |
 | Indexing | Stage 1 (B-tree, partial, HNSW) |
 | Vector similarity search | Stage 5: `rank_candidates_for_job` (migration 015), see [vector-design.md](vector-design.md); Stage 6: `compute_match_score` sets `applications.match_score` |
 | Set operations | Stage 6 skill gap: `job_skills EXCEPT candidate_skills` (§8, Q24) |
@@ -397,4 +397,78 @@ EXCEPT
 SELECT cs.skill_id FROM candidate_skills cs WHERE cs.candidate_id = $2
 ```
 The "have" list is the matching JOIN, with `meetsLevel = proficiency >= min_proficiency`. That's the same rule `rank_candidates_for_job()` uses for `matched_skills`, so the candidate page and the recruiter page agree. Every required skill lands in exactly one list (tested). Result for seeded Aman and the ML Engineer job: **have** Python (level 2, needs 4: below level); **missing** Natural Language Processing, PyTorch.
+
+---
+
+## 9. Stage 7: database rules for interviews and offers (migrations 018, 019)
+
+| Object | Kind | Rule |
+|---|---|---|
+| `notifications_type_check` | CHECK (dropped and re-added with `ALTER TABLE`) | Adds `interview_updated`, `offer_responded`, `offer_withdrawn` |
+| `interviews_location_required_check` | CHECK (added with `ALTER TABLE`) | Video and onsite interviews need a link or location; phone may leave it empty |
+| `local_today()` | SQL function, `STABLE` | `(now() AT TIME ZONE 'Asia/Kolkata')::date`. The server runs in UTC, but offer dates are Indian calendar dates. Between 00:00 and 05:30 IST, `current_date` would still be "yesterday" |
+| `trg_interviews_guard` | BEFORE INSERT OR UPDATE | INSERT: status `scheduled`, `scheduled_at > now()`, application `shortlisted` or `interviewed`. UPDATE: only a `scheduled` row may change at all (019); a reschedule must be in the future |
+| `trg_offers_guard` | BEFORE INSERT OR UPDATE | INSERT: `pending`, joining after today, expiry not past. UPDATE: only a `pending` row may change (019); accept/decline only if `expires_on >= local_today()` and the application is `offered` |
+| `trg_applications_stage_records` | **CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED** | At COMMIT: an application that became `interviewed` must have an interview, and one that became `offered` must have a pending offer |
+
+**Why a trigger and not a CHECK for "in the future"?** A CHECK constraint has to give the same answer forever, because PostgreSQL re-checks it when a dump is restored. `scheduled_at > now()` becomes false tomorrow for every row. The trigger checks it only at the moment of INSERT or reschedule. The seeded past interviews are imported with `talentmatch.import_mode = 'on'` (as in 011). Updates are never exempt.
+
+**Why deferred?** A normal trigger checks right after each statement. Inside the offer transaction, the status changes *before* the offer row exists (see §10), so an immediate check would always fail. `DEFERRABLE INITIALLY DEFERRED` moves the check to COMMIT, where only the final state must be consistent. A recruiter using the plain status dropdown to set `offered` without an offer is refused at COMMIT, and nothing is saved. The function re-reads the current status instead of trusting `NEW`, because the row may have changed again later in the same transaction (offered → rejected). Q29 shows it with `SET CONSTRAINTS … IMMEDIATE`:
+```
+NOTICE:  UPDATE shortlisted -> interviewed accepted for now (check deferred to COMMIT)
+NOTICE:  deferred check: Application 3 cannot be interviewed without an interview; schedule one instead
+```
+
+**Bug found by the tests (fixed in 019).** The 018 guards only rejected a *change* of status. Setting the same final status again (`withdrawn → withdrawn`) passed. Withdrawing an offer twice returned 200 and notified the candidate a second time. A row trigger cannot tell `SET status = 'withdrawn'` from any other UPDATE of the row, so 019 makes final rows frozen: no UPDATE at all. 018 had already been applied, so the functions are replaced in a new migration rather than edited.
+
+**How trigger errors reach the user.** Every guard uses `RAISE EXCEPTION '<readable text>' USING ERRCODE = 'check_violation'`. That arrives in Node as `23514` **without** a constraint name (a real CHECK always has one). `src/lib/api/db-rules.js` turns it into **409** with the database's own message (`INVALID_TRANSITION` for the transition guard, `RULE_VIOLATION` otherwise). A real CHECK violation stays **400** with the constraint name.
+
+## 10. Stage 7: the make-offer transaction
+
+Code: `makeOffer()` in `src/lib/offers.js` (`POST /api/recruiter/applications/:id/offer`). The same steps in SQL: Q27.
+```
+BEGIN
+  SELECT … FROM applications a JOIN jobs j … WHERE a.application_id = $1 FOR UPDATE OF a   -- 404 / 403 (other company)
+  SELECT update_application_status($1, 'offered', $recruiter, 'Offer made')
+       --   trg_applications_status_guard   ONLY interviewed -> offered (applied -> offered fails here)
+       --   trg_applications_status_history audit row (changed_by = recruiter)
+       --   the function's own 'status_changed' notification
+  INSERT INTO offers (application_id, salary_offered, currency, joining_date, expires_on) … RETURNING …
+       --   UNIQUE (application_id): one offer per application
+       --   trg_offers_guard: joining after today, expiry not in the past
+  INSERT INTO notifications (…, 'offer_made', …)
+COMMIT   -- deferred trg_applications_stage_records: 'offered' has a pending offer
+-- any error -> ROLLBACK: status, history row, both notifications and the offer all disappear
+```
+
+Design decisions (for the viva):
+- **Why is the status changed first?** The transition rule (only `interviewed → offered`) is the most important check, so it runs before any offer row exists. The deferred trigger only checks the final state at COMMIT, which makes the order free.
+- **Why no "already has an offer?" SELECT first?** Two recruiters could click at the same moment. The UNIQUE constraint decides atomically. The second INSERT fails with `23505 offers_application_id_key`, and the API returns **409 `OFFER_EXISTS`**.
+- **Proof of atomicity (Q28, real output).** A UNIQUE violation *after* the status change undoes the status change, the trigger's history row and the function's notification:
+  ```
+  NOTICE:  before: status=interviewed history=3 notifications=1
+  NOTICE:  inside: status=offered history=4 notifications=2
+  NOTICE:  error:  duplicate key value violates unique constraint "offers_application_id_key"
+  NOTICE:  after:  status=interviewed history=3 notifications=1
+  ```
+  The integration tests check the same through the API, plus a failure at the very last step (a blank notification title, `notifications_title_not_blank_check`).
+- **Accept / decline** (`respondToOffer()`): one transaction that locks the offer (`FOR UPDATE`), updates `status` + `responded_at` and notifies the recruiters. The lookup has `AND a.candidate_id = $2`, so another candidate's offer is **404**: we do not even reveal it exists. The trigger rejects expired offers. The recruiters notified are the job's poster **and** the recruiter who made the offer. The offer maker is not stored on the offer; it is `changed_by` of the `→ offered` history row the trigger wrote. (Found in the browser check: Meera made an offer on Arjun's job and was never told it was accepted.)
+- **Withdraw** (`withdrawOffer()`): offer → `withdrawn` **and** application `offered → rejected` through `update_application_status()` (the 011 transition rule already allows it), plus an `offer_withdrawn` notification, in one transaction. Otherwise the pipeline would keep showing the candidate as "offered".
+- **Decline does not change the application status.** `update_application_status()` refuses candidates as actors (Stage 2 rule), so the application stays `offered` with a `declined` offer. The recruiter can then reject it.
+
+## 11. Stage 7: scheduling an interview
+
+`scheduleInterview()` in `src/lib/interviews.js` (`POST /api/recruiter/applications/:id/interviews`):
+```
+BEGIN
+  lock the application (FOR UPDATE), check the recruiter's company
+  round_no = coalesce(max(round_no), 0) + 1        -- safe: the row lock serialises two schedulers
+  INSERT INTO interviews …                          -- trg_interviews_guard: future, shortlisted/interviewed
+  first interview only: update_application_status($1, 'interviewed', …)   -- history + status notification
+  INSERT INTO notifications (…, 'interview_scheduled', …)                  -- date shown in IST
+COMMIT
+```
+Reschedule, cancel and complete (`updateInterview()`) are one transaction each: lock the interview, UPDATE, and for reschedule/cancel an `interview_updated` notification. Rating and feedback are internal. `GET /api/candidate/interviews` does not select them (Q30). Q31 is an interview scorecard (average rating per candidate with `GROUP BY … HAVING avg(rating) >= 4`), and Q32 shows each offer's response window with `local_today()` plus unread notifications per user.
+
+**Notifications inbox.** Every query has `WHERE user_id = <session user>`. Marking as read is `UPDATE … WHERE notification_id = $1 AND user_id = $2`, so ownership is part of the UPDATE itself. Someone else's notification matches 0 rows and gets the same **404** as a missing one. The unread count uses the partial index `notifications_unread_idx … WHERE NOT is_read` from Stage 1.
 
