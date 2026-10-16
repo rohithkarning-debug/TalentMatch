@@ -5,7 +5,15 @@ const MAX_JSON_BYTES = 16 * 1024;
 // Reject state-changing requests sent from another website. Browsers always
 // add an Origin header to cross-site POSTs; if it is present it must match
 // this server. (Together with SameSite=Lax cookies this is our CSRF defence.)
+// Modern browsers also send Sec-Fetch-Site, which a web page cannot forge:
+// "cross-site" or "same-site" (another subdomain) is refused even when the
+// Origin header is missing. Requests without either header (curl, the
+// integration tests) are not from a browser, so CSRF does not apply to them.
 export function assertSameOrigin(request) {
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite === "cross-site" || fetchSite === "same-site") {
+    throw new ApiError(403, "CROSS_ORIGIN", "Cross-origin request rejected");
+  }
   const origin = request.headers.get("origin");
   if (!origin) return; // same-origin navigations / non-browser clients
   let originHost;
