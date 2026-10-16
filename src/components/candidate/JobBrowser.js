@@ -54,7 +54,7 @@ export default function JobBrowser() {
         <p className="text-sm text-slate-600" aria-live="polite">{jobs.length} open {jobs.length === 1 ? "job" : "jobs"} found</p>
         <div className="space-y-3">
           {jobs.length === 0 && <EmptyState icon="search" title="No open jobs match these filters" message="Try a different keyword or clear the filters." action={<button type="button" className={secondaryClass} onClick={clear}>Clear filters</button>} />}
-          {jobs.map((job) => <article key={job.id} className={`${cardClass} transition-colors hover:border-slate-300`}>
+          {jobs.map((job) => <article key={job.id} className={`${cardClass} transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lift motion-reduce:hover:translate-y-0`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h2 className="text-base font-semibold text-slate-900"><Link href={`/candidate/jobs/${job.id}`} className="hover:underline">{job.title}</Link></h2>

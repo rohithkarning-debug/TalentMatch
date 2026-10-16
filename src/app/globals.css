@@ -6,8 +6,47 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
+}
+
+/* Design tokens. Every component uses the Tailwind indigo (accent) and
+   slate (text, borders, page) colour classes, so redefining the two scales
+   here restyles the whole app from one place:
+     - slate-900 #0A2540  deep navy text
+     - slate-600 #425466  secondary text
+     - slate-50  #F6F9FC  page background
+     - indigo-600 #635BFF accent ("blurple"), indigo-700 is its hover
+   Text colours keep at least 4.5:1 contrast on white (slate-500 and darker,
+   indigo-600 and darker). */
+@theme {
+  --color-slate-50: #f6f9fc;
+  --color-slate-100: #eef2f7;
+  --color-slate-200: #e3e8ee;
+  --color-slate-300: #c9d2dd;
+  --color-slate-400: #8796a8;
+  --color-slate-500: #5f6f86;
+  --color-slate-600: #425466;
+  --color-slate-700: #31445a;
+  --color-slate-800: #1a2f45;
+  --color-slate-900: #0a2540;
+  --color-slate-950: #061b31;
+
+  --color-indigo-50: #f3f2ff;
+  --color-indigo-100: #e8e6ff;
+  --color-indigo-200: #d3cfff;
+  --color-indigo-300: #b3acff;
+  --color-indigo-400: #8f86ff;
+  --color-indigo-500: #7a73ff;
+  --color-indigo-600: #635bff;
+  --color-indigo-700: #5147e5;
+  --color-indigo-800: #4338c2;
+  --color-indigo-900: #372f9a;
+  --color-indigo-950: #221c5e;
+
+  /* Soft layered shadows: a hairline plus a wide, faint blue-grey blur. */
+  --shadow-card: 0 1px 1px rgb(10 37 64 / 0.03), 0 2px 5px -1px rgb(50 50 93 / 0.06), 0 10px 24px -12px rgb(50 50 93 / 0.12);
+  --shadow-lift: 0 2px 4px rgb(10 37 64 / 0.05), 0 12px 32px -8px rgb(50 50 93 / 0.22), 0 24px 60px -24px rgb(10 37 64 / 0.25);
 }
 
 html {
@@ -17,4 +56,42 @@ html {
 body {
   background: var(--color-slate-50);
   color: var(--color-slate-900);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Angled multi-colour band used behind the landing hero and auth pages.
+   Pure CSS: a navy base with soft radial colour blobs, skewed so its bottom
+   edge runs at an angle. */
+.tm-gradient {
+  background-color: #0a2540;
+  background-image:
+    radial-gradient(60% 80% at 85% 10%, rgb(255 95 162 / 0.85) 0%, transparent 60%),
+    radial-gradient(55% 75% at 100% 70%, rgb(255 181 71 / 0.75) 0%, transparent 60%),
+    radial-gradient(60% 90% at 60% 100%, rgb(0 212 255 / 0.7) 0%, transparent 60%),
+    radial-gradient(70% 100% at 25% 0%, rgb(99 91 255 / 0.95) 0%, transparent 65%);
+}
+
+.tm-angled {
+  clip-path: polygon(0 0, 100% 0, 100% 78%, 0 100%);
+}
+
+/* Gentle drift of the gradient blobs; switched off for reduced motion. */
+@keyframes tm-drift {
+  0%, 100% { background-position: 0% 0%, 0% 0%, 0% 0%, 0% 0%; }
+  50% { background-position: -4% 3%, 3% -2%, -3% -3%, 2% 2%; }
+}
+
+.tm-gradient-animated {
+  background-size: 120% 120%;
+  animation: tm-drift 18s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

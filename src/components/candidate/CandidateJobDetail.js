@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, formatDate, formatDateTime, formatSalary, formatScore, inputClass, labelClass, linkClass, PageShell, request, sectionTitleClass, SkeletonList, StatusBadge,
+  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, formatDate, formatDateTime, formatSalary, formatScore, inputClass, labelClass, linkClass, PageShell, request, ScoreMeter, sectionTitleClass, SkeletonList, StatusBadge,
 } from "@/components/ui";
 
 // Required skills the candidate has vs is missing (computed in SQL with
@@ -15,9 +15,9 @@ function SkillGap({ gap }) {
     <div>
       <h3 className="text-sm font-medium text-emerald-800">You have ({gap.have.length}/{total})</h3>
       {gap.have.length === 0 ? <p className="mt-1 text-sm text-slate-500">None of the required skills yet.</p> : <ul className="mt-2 space-y-1">
-        {gap.have.map((s) => <li key={s.skillId} className="flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-1.5 text-sm">
-          <span className="text-emerald-900">✓ {s.name}</span>
-          <span className={`text-xs ${s.meetsLevel ? "text-emerald-700" : "text-amber-700"}`}>
+        {gap.have.map((s) => <li key={s.skillId} className="flex items-center justify-between gap-3 rounded-lg bg-emerald-50 px-3 py-1.5 text-sm">
+          <span className="min-w-0 text-emerald-900">✓ {s.name}</span>
+          <span className={`shrink-0 text-right text-xs ${s.meetsLevel ? "text-emerald-700" : "text-amber-700"}`}>
             your level {s.proficiency} / needed {s.minProficiency}{s.meetsLevel ? "" : " (below level)"}
           </span>
         </li>)}
@@ -93,7 +93,11 @@ export default function CandidateJobDetail({ jobId }) {
         <section className={cardClass}>
           {job.application ? <div>
             <h2 className={sectionTitleClass}>Your application</h2>
-            <p className="mt-2 text-sm text-slate-700">Status <StatusBadge status={job.application.status} /> · match score <span className="font-mono">{formatScore(job.application.matchScore)}</span> · applied {formatDateTime(job.application.appliedAt)}</p>
+            <div className="mt-3 flex flex-wrap items-start gap-x-8 gap-y-3">
+              <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status</p><div className="mt-1"><StatusBadge status={job.application.status} /></div></div>
+              <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Match score</p><ScoreMeter score={job.application.matchScore} className="mt-1 w-40" /></div>
+              <div><p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Applied</p><p className="mt-1 text-sm text-slate-700">{formatDateTime(job.application.appliedAt)}</p></div>
+            </div>
             <Link href="/candidate/applications" className={`${linkClass} mt-2 inline-block text-sm`}>See the status history →</Link>
           </div> : job.status !== "open" ? <p className="text-sm text-slate-600">This job is no longer accepting applications.</p>
           : <form onSubmit={apply} className="space-y-3">
