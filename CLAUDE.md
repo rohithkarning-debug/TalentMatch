@@ -24,6 +24,8 @@ Reference documents (source of truth for requirements):
 8. **Explain important decisions in beginner-friendly language** (this is for a viva).
 9. **Keep `docs/` updated** as we go: schema, data dictionary, vector design, test cases.
 10. **Minimal dependencies.** Allowed: `next`, `react`, `react-dom`, `pg`, `bcryptjs`, `jose`, `zod`, `@huggingface/transformers`, one PDF text extractor, Tailwind (and its build tooling). **Ask before adding anything else.**
+11. **Resume uploads accept PDF and TXT only.** (5 MB max, at least 50 characters of extractable text.)
+12. **Never add any Claude/AI attribution anywhere unless I explicitly ask:** no Co-Authored-By trailers, no "Generated with Claude Code" lines in commits, PR descriptions, code comments, README, or docs.
 
 ---
 
