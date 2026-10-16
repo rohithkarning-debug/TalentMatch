@@ -1,4 +1,4 @@
-# TalentMatch — Advanced SQL Features (Stage 2)
+# TalentMatch — Advanced SQL Features (Stages 2, 5 and 6)
 
 Migrations: `010_updated_at_triggers.sql`, `011_application_triggers.sql`, `012_functions.sql`, `013_views.sql`.
 Tests: `db/tests/stage2_advanced_tests.sql` · Queries: `db/queries/important_queries.sql` · Transaction demo: `db/demos/transaction_demo.sql`.
@@ -8,11 +8,12 @@ All outputs below are real, captured on 2026-10-09 from PostgreSQL 17.11 running
 | Requirement concept (PDF §7) | Where |
 |---|---|
 | Triggers | 13 triggers (010, 011) |
-| Stored procedures / functions | `generate_hiring_pipeline_report`, `update_application_status`, `is_valid_status_transition` (+ trigger functions) |
+| Stored procedures / functions | `generate_hiring_pipeline_report`, `update_application_status`, `is_valid_status_transition` (+ trigger functions); Stage 5: `rank_candidates_for_job`; Stage 6: `compute_match_score` (016) |
 | Views | `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary` |
-| Transactions | `update_application_status` (atomic), seed and migrations (one transaction each), `transaction_demo.sql` |
+| Transactions | Stage 6 **apply to job** (`src/lib/applications.js`, §7), job create/edit/delete, resume upload, `update_application_status` (atomic), seed and migrations, `transaction_demo.sql` |
 | Indexing | Stage 1 (B-tree, partial, HNSW) |
-| Vector similarity search | Stage 5: `rank_candidates_for_job` (migration 015), see [vector-design.md](vector-design.md) |
+| Vector similarity search | Stage 5: `rank_candidates_for_job` (migration 015), see [vector-design.md](vector-design.md); Stage 6: `compute_match_score` sets `applications.match_score` |
+| Set operations | Stage 6 skill gap: `job_skills EXCEPT candidate_skills` (§8, Q24) |
 
 ---
 
@@ -218,7 +219,7 @@ Joins companies → jobs → applications → offers. Jobs repeat once per appli
 
 ## 4. Important queries
 
-`db/queries/important_queries.sql` contains 16 commented queries. All of them ran successfully (exit code 0, no errors).
+`db/queries/important_queries.sql` contains 26 commented queries. On 2026-10-16 the whole file ran with `ON_ERROR_STOP` (exit code 0, no errors).
 
 | # | Concept(s) | Purpose | Rows |
 |---|---|---|---|
@@ -238,6 +239,16 @@ Joins companies → jobs → applications → offers. Jobs repeat once per appli
 | Q14 | Correlated subquery with MAX | Each candidate's latest application | 12 |
 | Q15 | JOIN, AVG, HAVING | Interview rating vs outcome (offered 4.50, interviewed 4.00) | 2 |
 | Q16 | View + set-returning function | Company summary and Nimbus funnel | 3 + 3 |
+| Q17 | M:N JOIN, GROUP BY + HAVING, string_agg | Skill profile per candidate | 12 |
+| Q18 | Two derived-table aggregates + HAVING | Skill demand vs supply | 16 |
+| Q19 | JOIN ON TRUE, LEFT JOIN, HAVING on a ratio | Required-skill coverage for open jobs | 10 |
+| Q20 | pgvector function (`<=>`) | Top 5 semantic matches for ML Engineer | 5 |
+| Q21 | Same, applicants only | Ranked applicants | 4 |
+| Q22 | Raw k-NN `ORDER BY <=> LIMIT k` | Best open jobs for Aditi | 3 |
+| Q23 | **BEGIN / FOR SHARE / INSERT … RETURNING / ROLLBACK** | Apply transaction step by step (count 3 → 4 inside, 3 after ROLLBACK) | 1 per step |
+| Q24 | **EXCEPT** + JOIN | Skill gap for Aman / ML Engineer | 3 |
+| Q25 | Function per row, aggregate check | Stored match scores equal `1 - (<=>)` (max diff 0.00004318) | 1 |
+| Q26 | `ORDER BY … DESC NULLS LAST`, correlated `string_agg` | Ranked applicants with matched / required skills | 4 |
 
 Q8 already shows why semantic matching is useful. Rohan (offered for ML Engineer) meets only 1 of 3 required skills by keyword, because his profile says TensorFlow rather than PyTorch, yet the interviewers rated him 5/5 and 4/5.
 
@@ -279,7 +290,10 @@ Other transactions in the project:
 - Each migration runs in its own transaction (`scripts/migrate.js`).
 - The seed is one transaction.
 - `update_application_status()` is atomic.
-- Registration, apply and offer will be API transactions in later stages.
+- Registration (users + candidates) is an API transaction (Stage 3).
+- **Apply to job** is an explicit API transaction (Stage 6, see §7).
+- Job create / edit / delete lock and change `jobs` + `job_skills` in one transaction (Stage 6).
+- Making an offer is still to come.
 
 ---
 
@@ -331,3 +345,56 @@ PASS T13: all applicant_count values are 0 after TRUNCATE
 - stored history rows that break `is_valid_status_transition`
 
 Re-running `db:seed` left a fingerprint of every job's `updated_at` and `applicant_count` unchanged.
+
+---
+
+## 7. Stage 6: the apply-to-job transaction
+
+Code: `applyToJob()` in `src/lib/applications.js`, called by `POST /api/candidate/applications`. Step-by-step SQL version: Q23.
+
+```
+BEGIN
+  SELECT … FROM jobs WHERE job_id = $1 FOR SHARE          -- lock the job; 404 if draft, 409 if closed
+  SELECT … FROM resumes WHERE resume_id = $1 AND candidate_id = $2 FOR SHARE   -- 404 if not theirs
+  INSERT INTO applications (job_id, candidate_id, resume_id, cover_letter, match_score)
+  VALUES ($1, $2, $3, $4, compute_match_score($3, $1))    -- triggers fire here, inside the txn:
+       --   trg_applications_initial_status   new row must be 'applied'
+       --   trg_applications_applicant_count  jobs.applicant_count + 1
+       --   trg_applications_status_history   (NULL -> applied) history row
+  INSERT INTO notifications (…) SELECT r.user_id, 'application_submitted', … FROM recruiters r …
+COMMIT                         -- everything above becomes visible at once
+-- any error -> ROLLBACK: the application, the trigger's +1 and history row, and the notification all disappear
+```
+
+Design decisions (for the viva):
+- **Why one transaction?** An application without its notification, or a `+1` on `applicant_count` with no application, would be inconsistent. Atomicity guarantees all four changes happen or none. The rollback test makes the last step (the notification) fail on purpose: no application row, no history row and no count change remain. The negative control below shows what happens *without* a transaction.
+- **Why `FOR SHARE` on the job?** Many candidates can apply at the same time, because share locks don't block each other. But a recruiter's `UPDATE jobs SET status = 'closed'` needs a stronger lock and waits until we commit. So "check the job is open" and "insert the application" can't be split by a concurrent close.
+- **Why no "already applied?" SELECT first?** Two simultaneous requests could both see "not applied" and both insert. The `UNIQUE (job_id, candidate_id)` constraint decides atomically. The second INSERT fails with `23505` and the API turns that into **409 `ALREADY_APPLIED`**.
+- **Why isn't `applicant_count` updated in the API?** The AFTER INSERT trigger already does it, inside the same transaction, so it rolls back too. Updating it in two places would double count.
+- **Match score.** `compute_match_score(resume_id, job_id)` (migration 016) returns `round(1 - (resume <=> job), 4)` for the resume the candidate *chose*, or **NULL** if either side isn't embedded. It never returns a guessed value. `npm run db:embed` later fills in NULL scores once both embeddings exist; migration 017 stops that from touching `applications.updated_at`.
+
+Negative control (run on 2026-10-16, a scratch script doing the same INSERTs **without** BEGIN/ROLLBACK):
+```
+notification failed: notifications_title_not_blank_check
+without a transaction: application rows left = 1, applicant_count 1 -> 2
+```
+
+### Status changes
+
+`PATCH /api/recruiter/applications/:id` checks ownership in the API, then calls `update_application_status()`. The API does **not** know the workflow rules. Invalid moves are rejected by `trg_applications_status_guard`, and its `RAISE EXCEPTION … USING ERRCODE = 'check_violation'` reaches the API as `23514`. The API returns it as **409 `INVALID_TRANSITION`** with the database's own message and hint, which the UI displays as is:
+```
+Invalid application status transition: shortlisted -> offered (application 42)
+• Allowed: applied->shortlisted|rejected, shortlisted->interviewed|rejected, interviewed->offered|rejected, offered->rejected. rejected is final.
+```
+
+## 8. Stage 6: skill gap with EXCEPT
+
+`getSkillGap()` in `src/lib/candidate/skill-gap.js` (Q24 is the same logic in one query):
+```sql
+-- missing = the job's required skills MINUS the candidate's skills
+SELECT js.skill_id FROM job_skills js WHERE js.job_id = $1 AND js.is_required
+EXCEPT
+SELECT cs.skill_id FROM candidate_skills cs WHERE cs.candidate_id = $2
+```
+The "have" list is the matching JOIN, with `meetsLevel = proficiency >= min_proficiency`. That's the same rule `rank_candidates_for_job()` uses for `matched_skills`, so the candidate page and the recruiter page agree. Every required skill lands in exactly one list (tested). Result for seeded Aman and the ML Engineer job: **have** Python (level 2, needs 4: below level); **missing** Natural Language Processing, PyTorch.
+
