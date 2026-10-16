@@ -42,6 +42,14 @@ describe("jobCreateSchema", () => {
     assert.deepEqual(job.skills, []);
   });
 
+  it("keeps an explicit null salary as null (not coerced to 0)", () => {
+    const job = jobCreateSchema.parse({ ...validJob, salaryMin: null, salaryMax: null });
+    assert.equal(job.salaryMin, null);
+    assert.equal(job.salaryMax, null);
+    assert.equal(jobCreateSchema.parse({ ...validJob, salaryMin: "800000" }).salaryMin, 800000);
+    assert.equal(jobUpdateSchema.parse({ salaryMax: null }).salaryMax, null);
+  });
+
   it("parses skills with defaults for isRequired and minProficiency", () => {
     const job = jobCreateSchema.parse({ ...validJob, skills: [{ skillId: 3 }, { skillId: "7", isRequired: false, minProficiency: 2 }] });
     assert.deepEqual(job.skills, [{ skillId: 3, isRequired: true, minProficiency: 3 }, { skillId: 7, isRequired: false, minProficiency: 2 }]);
