@@ -34,8 +34,8 @@ export function ScheduleInterviewForm({ applicationId, isFirst, onDone, onCancel
     onDone(r.body);
   }
 
-  return <form onSubmit={submit} className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Schedule interview{isFirst && <span className="ml-2 text-xs font-normal text-zinc-500">first round: the application moves to “interviewed” in the same transaction</span>}</p>
+  return <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 p-4">
+    <p className="text-sm font-medium text-slate-900">Schedule interview{isFirst && <span className="ml-2 text-xs font-normal text-slate-500">first round: the application moves to “interviewed” in the same transaction</span>}</p>
     <div className="grid gap-3 sm:grid-cols-4">
       <label className={`${labelClass} sm:col-span-2`}>Date and time
         <input type="datetime-local" required className={inputClass} value={form.scheduledAt} onChange={set("scheduledAt")} /></label>
@@ -72,8 +72,8 @@ export function MakeOfferForm({ applicationId, onDone, onCancel }) {
     onDone(r.body);
   }
 
-  return <form onSubmit={submit} className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-    <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">Make an offer <span className="ml-2 text-xs font-normal text-zinc-500">one transaction: offer + status “offered” + candidate notification</span></p>
+  return <form onSubmit={submit} className="space-y-3 rounded-xl border border-slate-200 p-4">
+    <p className="text-sm font-medium text-slate-900">Make an offer <span className="ml-2 text-xs font-normal text-slate-500">one transaction: offer + status “offered” + candidate notification</span></p>
     <div className="grid gap-3 sm:grid-cols-4">
       <label className={labelClass}>Annual salary
         <input type="number" min={1} step="any" required className={inputClass} value={form.salaryOffered} onChange={set("salaryOffered")} placeholder="2400000" /></label>
