@@ -225,3 +225,63 @@ FROM company_hiring_summary ORDER BY total_applications DESC;
 SELECT job_title, total_applications, shortlist_rate_pct, offer_rate_pct, avg_days_to_shortlist
 FROM generate_hiring_pipeline_report(
        (SELECT company_id FROM companies WHERE name = 'Nimbus Analytics Pvt Ltd'));
+
+\echo '\n=== Q17 Skill profile per candidate (GROUP BY + HAVING) ==='
+-- DEMONSTRATES: JOIN through the M:N table candidate_skills, COUNT, AVG,
+--               FILTER, string_agg, GROUP BY, HAVING.
+-- RETURNS: candidates with at least 3 skills: how many, how many at
+--          advanced level (4-5), average proficiency, and the skill list.
+-- WHY: candidate dashboard summary; recruiters spot well-documented profiles.
+SELECT u.full_name AS candidate,
+       count(*)                                        AS skills,
+       count(*) FILTER (WHERE cs.proficiency >= 4)     AS advanced_skills,
+       round(avg(cs.proficiency), 2)                   AS avg_proficiency,
+       string_agg(s.name, ', ' ORDER BY cs.proficiency DESC, s.name) AS skill_list
+FROM candidate_skills cs
+JOIN users u  ON u.user_id = cs.candidate_id
+JOIN skills s ON s.skill_id = cs.skill_id
+GROUP BY cs.candidate_id, u.full_name
+HAVING count(*) >= 3
+ORDER BY skills DESC, avg_proficiency DESC;
+
+\echo '\n=== Q18 Skill demand vs. supply (two aggregates + HAVING) ==='
+-- DEMONSTRATES: aggregating two M:N tables separately in derived tables
+--               (joining both first would multiply the counts), LEFT JOIN,
+--               GROUP BY, COALESCE for skills no candidate has.
+-- RETURNS: skills required by at least one OPEN job, with how many open jobs
+--          require them and how many candidates list them.
+-- WHY: shows candidates which skills are worth adding to their profile.
+SELECT s.name AS skill, s.category,
+       demand.open_jobs,
+       COALESCE(supply.candidates, 0) AS candidates_with_skill
+FROM skills s
+JOIN (SELECT js.skill_id, count(*) AS open_jobs
+        FROM job_skills js JOIN jobs j ON j.job_id = js.job_id
+       WHERE j.status = 'open' AND js.is_required
+       GROUP BY js.skill_id) AS demand ON demand.skill_id = s.skill_id
+LEFT JOIN (SELECT skill_id, count(*) AS candidates
+             FROM candidate_skills GROUP BY skill_id) AS supply ON supply.skill_id = s.skill_id
+ORDER BY demand.open_jobs DESC, candidates_with_skill, s.name;
+
+\echo '\n=== Q19 Required-skill coverage of each candidate for open jobs (GROUP BY + HAVING) ==='
+-- DEMONSTRATES: pairing every candidate with every open job (JOIN ON TRUE),
+--               LEFT JOIN with extra conditions, COUNT of matches, HAVING on a ratio.
+-- RETURNS: candidate / open-job pairs where the candidate already has at least
+--          60% of the job's required skills at the required proficiency.
+-- WHY: a transparent, rule-based shortlist next to the vector-based ranking.
+--      (This is NOT the match score; that comes from pgvector embeddings.)
+SELECT u.full_name AS candidate, j.title AS job,
+       count(cs.skill_id)  AS required_skills_met,
+       count(*)            AS required_skills,
+       round(100.0 * count(cs.skill_id) / count(*)) AS coverage_pct
+FROM jobs j
+JOIN job_skills js       ON js.job_id = j.job_id AND js.is_required
+JOIN candidates c        ON TRUE
+JOIN users u             ON u.user_id = c.user_id
+LEFT JOIN candidate_skills cs
+       ON cs.candidate_id = c.user_id AND cs.skill_id = js.skill_id
+      AND cs.proficiency >= js.min_proficiency
+WHERE j.status = 'open'
+GROUP BY u.user_id, u.full_name, j.job_id, j.title
+HAVING count(cs.skill_id)::numeric / count(*) >= 0.6
+ORDER BY j.title, coverage_pct DESC, u.full_name;
