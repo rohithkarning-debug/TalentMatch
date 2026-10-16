@@ -47,7 +47,8 @@ function InterviewCard({ iv, onChanged }) {
       </div>
       {iv.status === "scheduled" && !mode && <div className="flex flex-wrap gap-2">
         <button className={secondaryClass} onClick={() => setMode("reschedule")} disabled={busy}>Reschedule</button>
-        <button className={secondaryClass} onClick={() => setMode("complete")} disabled={busy}>Mark completed</button>
+        {/* Only after the interview time: trg_interviews_guard (migration 021) refuses earlier. */}
+        {!iv.isUpcoming && <button className={secondaryClass} onClick={() => setMode("complete")} disabled={busy}>Mark completed</button>}
         <button className={dangerClass} onClick={cancel} disabled={busy}>Cancel</button>
       </div>}
     </div>
