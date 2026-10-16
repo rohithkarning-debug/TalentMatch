@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Icon, NOTIFICATIONS_CHANGED, request } from "@/components/ui";
+import { Icon, LogoMark, NOTIFICATIONS_CHANGED, request } from "@/components/ui";
 import { HOME_FOR_ROLE } from "@/lib/roles";
 
 export const NAV_LINKS = {
@@ -55,9 +55,9 @@ function NotificationBell({ pathname }) {
   }, [load]);
   const label = count ? `Notifications, ${count} unread` : "Notifications";
   return <Link href="/notifications" aria-label={label} title={label}
-    className={`relative flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 hover:text-slate-900 ${ring}`}>
+    className={`relative flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 ${ring}`}>
     <Icon name="bell" className="h-5 w-5" />
-    {count > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white">
+    {count > 0 && <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold leading-none tabular-nums text-white ring-2 ring-white">
       {count > 99 ? "99+" : count}
     </span>}
   </Link>;
@@ -90,12 +90,12 @@ function UserMenu({ user }) {
 
   return <div className="relative" ref={ref}>
     <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open}
-      className={`flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 text-sm text-slate-700 hover:bg-slate-100 ${ring}`}>
-      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-indigo-600 text-xs font-semibold text-white">{initials(user.fullName)}</span>
+      className={`flex items-center gap-2 rounded-full py-1 pl-1 pr-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 ${ring}`}>
+      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-sky-500 text-xs font-semibold text-white">{initials(user.fullName)}</span>
       <span className="hidden max-w-[10rem] truncate font-medium md:inline">{user.fullName}</span>
       <Icon name="chevronDown" className="h-4 w-4 text-slate-400" />
     </button>
-    {open && <div role="menu" className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+    {open && <div role="menu" className="absolute right-0 z-30 mt-2 w-64 overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-lift">
       <div className="border-b border-slate-100 px-4 py-3">
         <p className="truncate text-sm font-medium text-slate-900">{user.fullName}</p>
         <p className="truncate text-xs text-slate-500">{user.email}</p>
@@ -122,15 +122,15 @@ export default function TopNav({ user }) {
   const active = activeHref(links, pathname);
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
-  const linkClass = (href) => `rounded-lg px-3 py-2 text-sm font-medium transition-colors ${ring} ${href === active
+  const linkClass = (href) => `rounded-full px-3 py-1.5 text-sm font-semibold transition-colors ${ring} ${href === active
     ? "bg-indigo-50 text-indigo-700"
     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"}`;
 
-  return <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 backdrop-blur sm:px-6 lg:px-8">
+  return <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/85 px-4 backdrop-blur-md sm:px-6 lg:px-8">
     <div className="mx-auto flex h-16 max-w-6xl items-center gap-3">
-      <Link href={user ? HOME_FOR_ROLE[user.role] || "/" : "/"} className={`flex shrink-0 items-center gap-2 rounded-lg ${ring}`}>
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white"><Icon name="sparkles" className="h-4 w-4" /></span>
-        <span className="text-base font-semibold tracking-tight text-slate-900">TalentMatch</span>
+      <Link href={user ? HOME_FOR_ROLE[user.role] || "/" : "/"} className={`flex shrink-0 items-center gap-2.5 rounded-lg ${ring}`}>
+        <LogoMark className="h-8 w-8" />
+        <span className="text-[17px] font-bold tracking-[-0.02em] text-slate-900">TalentMatch</span>
       </Link>
 
       {links.length > 0 && <nav aria-label="Main" className="ml-4 hidden items-center gap-1 md:flex">
@@ -143,16 +143,18 @@ export default function TopNav({ user }) {
           <UserMenu user={user} />
           {links.length > 0 && <button type="button" onClick={() => setMobileOpen((v) => !v)} aria-expanded={mobileOpen} aria-controls="mobile-nav"
             aria-label={mobileOpen ? "Close menu" : "Open menu"}
-            className={`flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100 md:hidden ${ring}`}>
+            className={`flex h-9 w-9 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100 md:hidden ${ring}`}>
             <Icon name={mobileOpen ? "close" : "menu"} className="h-5 w-5" />
           </button>}
         </> : <>
-          <Link href="/login" className={`rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 ${ring}`}>Sign in</Link>
-          <Link href="/register" className={`rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 ${ring}`}>Create account</Link>
+          <Link href="/login" className={`rounded-full px-3 py-1.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 ${ring}`}>Sign in</Link>
+          <Link href="/register" className={`group inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-indigo-600 px-3.5 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 ${ring}`}>
+            Get started <Icon name="arrowRight" className="hidden h-3.5 w-3.5 sm:block" />
+          </Link>
         </>}
       </div>
     </div>
-    {mobileOpen && <nav id="mobile-nav" aria-label="Main" className="-mx-4 border-t border-slate-200 bg-white px-4 py-2 sm:-mx-6 sm:px-6 md:hidden">
+    {mobileOpen && <nav id="mobile-nav" aria-label="Main" className="-mx-4 space-y-1 border-t border-slate-200 bg-white px-4 py-3 sm:-mx-6 sm:px-6 md:hidden">
       {links.map((l) => <Link key={l.href} href={l.href} className={`block ${linkClass(l.href)}`} aria-current={l.href === active ? "page" : undefined}>{l.label}</Link>)}
     </nav>}
   </header>;
@@ -160,10 +162,10 @@ export default function TopNav({ user }) {
 
 // Shown while the session is being read (Suspense fallback): same height, no layout shift.
 export function TopNavSkeleton() {
-  return <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 px-4 sm:px-6 lg:px-8">
-    <div className="mx-auto flex h-16 max-w-6xl items-center gap-2">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white"><Icon name="sparkles" className="h-4 w-4" /></span>
-      <span className="text-base font-semibold tracking-tight text-slate-900">TalentMatch</span>
+  return <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/85 px-4 sm:px-6 lg:px-8">
+    <div className="mx-auto flex h-16 max-w-6xl items-center gap-2.5">
+      <LogoMark className="h-8 w-8" />
+      <span className="text-[17px] font-bold tracking-[-0.02em] text-slate-900">TalentMatch</span>
     </div>
   </header>;
 }

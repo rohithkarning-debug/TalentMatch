@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, buttonClass, Card, formatDate, Icon, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, SkeletonList } from "@/components/ui";
+import { Alert, buttonClass, Card, CtaArrow, formatDate, Icon, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, SkeletonList } from "@/components/ui";
 
 function Section({ title, description, children }) {
   return <Card title={title} description={description}>{children}</Card>;
@@ -108,7 +108,7 @@ export default function CandidateDashboard() {
 
   return <PageShell>
       <PageHeader title="My profile" description="Your profile, skills and resumes. Recruiters see these when you apply."
-        actions={<><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh</button><Link href="/candidate/jobs" className={buttonClass}><Icon name="search" className="h-4 w-4" />Browse open jobs</Link></>} />
+        actions={<><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh</button><Link href="/candidate/jobs" className={buttonClass}><Icon name="search" className="h-4 w-4" />Browse open jobs<CtaArrow /></Link></>} />
       <Alert lines={error ? [error] : null} />
       <Alert lines={notice ? [notice] : null} kind="success" />
       {!profile ? !error && <SkeletonList rows={3} label="Loading your profile" /> : <>

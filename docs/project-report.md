@@ -524,6 +524,12 @@ Configuration comes only from environment variables (`DATABASE_URL`, `AUTH_JWT_S
 
 All screenshots are in [`docs/screenshots/final/`](screenshots/final/) and were taken from the final build with the seeded demo data.
 
+### Landing page
+
+| | |
+|---|---|
+| ![Landing desktop](screenshots/final/31-landing-desktop.png) **31. Landing page (desktop)** | ![Landing mobile](screenshots/final/32-landing-mobile.png) **32. Landing page (mobile)** |
+
 ### Authentication
 
 | | |
@@ -563,6 +569,7 @@ All screenshots are in [`docs/screenshots/final/`](screenshots/final/) and were 
 | | | |
 |---|---|---|
 | ![Mobile jobs](screenshots/final/28-mobile-candidate-job-browsing.png) **28. Candidate jobs** | ![Mobile ranked](screenshots/final/29-mobile-recruiter-ranked-applicants.png) **29. Ranked applicants** | ![Mobile admin](screenshots/final/30-mobile-admin-dashboard.png) **30. Admin dashboard** |
+| ![Mobile login](screenshots/final/33-mobile-login.png) **33. Sign in** | ![Mobile job detail](screenshots/final/34-mobile-candidate-job-detail.png) **34. Candidate job detail and skill gap** | |
 
 ## 13. Testing results
 

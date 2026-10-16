@@ -18,19 +18,19 @@ const KPIS = [
 ];
 
 // A table inside a card runs edge to edge (no second border) and scrolls sideways on small screens.
-const CARD_TABLE = "relative -mx-5 -mb-5 overflow-x-auto border-t border-slate-200 sm:-mx-6 sm:-mb-6";
+const CARD_TABLE = "relative -mx-5 -mb-5 overflow-x-auto rounded-b-2xl border-t border-slate-200 sm:-mx-7 sm:-mb-7";
 
 const pct = (v) => (v == null ? "—" : `${v.toFixed(1)}%`);
 
 function DashboardSkeleton() {
   return <div className="space-y-6" role="status" aria-label="Loading dashboard">
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {KPIS.map((k) => <div key={k.key} className="rounded-xl border border-slate-200 bg-white p-5"><Skeleton className="h-7 w-12" /><Skeleton className="mt-2 h-3 w-20" /></div>)}
+      {KPIS.map((k) => <div key={k.key} className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card"><Skeleton className="h-7 w-12" /><Skeleton className="mt-2 h-3 w-20" /></div>)}
     </div>
     <div className="grid gap-6 lg:grid-cols-2">
-      {[0, 1].map((i) => <div key={i} className="rounded-xl border border-slate-200 bg-white p-6 space-y-4"><Skeleton className="h-4 w-40" />{[0, 1, 2, 3, 4].map((j) => <Skeleton key={j} className="h-3" />)}</div>)}
+      {[0, 1].map((i) => <div key={i} className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-7 shadow-card"><Skeleton className="h-4 w-40" />{[0, 1, 2, 3, 4].map((j) => <Skeleton key={j} className="h-3" />)}</div>)}
     </div>
-    <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-4"><Skeleton className="h-4 w-56" />{[0, 1, 2].map((j) => <Skeleton key={j} className="h-3" />)}</div>
+    <div className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-7 shadow-card"><Skeleton className="h-4 w-56" />{[0, 1, 2].map((j) => <Skeleton key={j} className="h-3" />)}</div>
     <span className="sr-only">Loading dashboard…</span>
   </div>;
 }

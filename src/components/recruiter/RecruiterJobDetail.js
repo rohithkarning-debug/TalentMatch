@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, dangerClass, EMPLOYMENT_LABELS, EmptyState, errorLines, formatDate, formatDateTime, formatMoney, formatSalary, formatScore, inlineInputClass, inputClass, labelClass, linkClass, PageShell, request, secondaryClass, SkeletonList, StatusBadge, StatusTimeline, tableClass, tableWrapClass, tdClass, thClass, theadClass, trClass,
+  Alert, buttonClass, cardClass, dangerClass, EMPLOYMENT_LABELS, EmptyState, errorLines, formatDate, formatDateTime, formatMoney, formatSalary, inlineInputClass, inputClass, labelClass, linkClass, PageShell, request, ScoreMeter, secondaryClass, SkeletonList, StatusBadge, StatusTimeline, tableClass, tableWrapClass, tdClass, thClass, theadClass, trClass,
 } from "@/components/ui";
 import { MakeOfferForm, ScheduleInterviewForm } from "@/components/recruiter/PipelineForms";
 
@@ -21,14 +21,6 @@ function SkillMatch({ matched, required }) {
   </div>;
 }
 
-function ScoreBar({ score }) {
-  if (score == null) return <span className="text-xs text-slate-500" title="Resume or job not embedded yet">not scored</span>;
-  const pct = Math.max(0, Math.min(100, score * 100));
-  return <div className="w-28">
-    <p className="font-mono text-sm text-slate-900">{formatScore(score)}</p>
-    <div className="mt-1 h-1.5 rounded bg-slate-100"><div className="h-1.5 rounded bg-indigo-500" style={{ width: `${pct}%` }} /></div>
-  </div>;
-}
 
 // Interviews and offer of one applicant, with the next possible action.
 // The buttons only appear when the action makes sense, but the database
@@ -81,13 +73,13 @@ function ApplicantRow({ app, rank, onChanged }) {
 
   return <li className={cardClass}>
     <div className="flex flex-wrap items-start gap-4">
-      <span className="w-6 pt-0.5 text-sm text-slate-500">#{rank}</span>
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-indigo-50 text-xs font-semibold tabular-nums text-indigo-700">#{rank}</span>
       <div className="min-w-48 flex-1">
         <p className="font-medium text-slate-900">{app.fullName} <StatusBadge status={app.status} /></p>
         <p className="text-sm text-slate-600">{app.headline || "No headline"} · {app.yearsExperience} yrs · applied {formatDateTime(app.appliedAt)}</p>
         <p className="text-xs text-slate-500">Resume: {app.resumeFileName || "deleted by candidate"}</p>
       </div>
-      <ScoreBar score={app.matchScore} />
+      <ScoreMeter score={app.matchScore} />
       <div className="w-full sm:w-72"><SkillMatch matched={app.matchedSkills} required={app.requiredSkills} /></div>
     </div>
     <form onSubmit={change} className="mt-3 flex flex-wrap items-end gap-2">
@@ -160,9 +152,9 @@ function SearchTab({ jobId }) {
           <tr><th className={thClass}>#</th><th className={thClass}>Candidate</th><th className={thClass}>Similarity</th><th className={thClass}>Matched / required skills</th><th className={thClass}>Applied?</th></tr>
         </thead>
         <tbody>{result.matches.map((m, i) => <tr key={m.candidateId} className={trClass}>
-          <td className={`${tdClass} text-slate-500`}>{i + 1}</td>
+          <td className={`${tdClass} tabular-nums text-slate-500`}>{i + 1}</td>
           <td className={tdClass}><p className="font-medium text-slate-900">{m.fullName}</p><p className="text-xs text-slate-500">{m.yearsExperience} yrs experience</p></td>
-          <td className={tdClass}><ScoreBar score={m.similarity} /></td>
+          <td className={tdClass}><ScoreMeter score={m.similarity} /></td>
           <td className={tdClass}><SkillMatch matched={m.matchedSkillNames} required={result.job.requiredSkills} /></td>
           <td className={tdClass}>{m.hasApplied ? <StatusBadge status={m.applicationStatus} /> : <span className="text-xs text-slate-500">not applied</span>}</td>
         </tr>)}</tbody>

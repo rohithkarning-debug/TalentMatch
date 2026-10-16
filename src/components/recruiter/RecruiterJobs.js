@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, EmptyState, errorLines, Icon, mutedLabelClass, PageHeader, PageShell, request, SkeletonList, StatusBadge, Tag,
+  Alert, buttonClass, cardClass, CtaArrow, EMPLOYMENT_LABELS, EmptyState, errorLines, Icon, mutedLabelClass, PageHeader, PageShell, request, SkeletonList, StatusBadge, Tag,
 } from "@/components/ui";
 
 const STAGES = ["applied", "shortlisted", "interviewed", "offered", "rejected"];
@@ -25,8 +25,8 @@ export default function RecruiterJobs() {
       <Alert lines={error} />
       {jobs === null ? !error && <SkeletonList label="Loading jobs" /> : <div className="space-y-3">
         {jobs.length === 0 && <EmptyState icon="briefcase" title="No jobs yet" message="Post your first job to start receiving ranked applicants."
-          action={<Link href="/recruiter/jobs/new" className={buttonClass}>Post a job</Link>} />}
-        {jobs.map((job) => <article key={job.id} className={`${cardClass} transition-colors hover:border-slate-300`}>
+          action={<Link href="/recruiter/jobs/new" className={buttonClass}>Post a job<CtaArrow /></Link>} />}
+        {jobs.map((job) => <article key={job.id} className={`${cardClass} transition duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:shadow-lift motion-reduce:hover:translate-y-0`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-base font-semibold text-slate-900">
