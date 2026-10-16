@@ -1,5 +1,6 @@
 // DESTRUCTIVE: drops every TalentMatch table and all of its data, plus the
-// migration history, by running db/reset.sql. Afterwards run
+// migration history, by running db/reset.sql, and deletes the uploaded resume
+// files in uploads/resumes/ (their database rows are gone). Afterwards run
 // `npm run db:migrate` and `npm run db:seed` to rebuild.
 //
 //   npm run db:reset              (asks you to type the database name)
@@ -14,6 +15,7 @@ import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { getPool } from "../src/lib/db.js";
 import { assertDevDatabase, formatTarget } from "./lib/db-target.js";
+import { clearUploadedResumes } from "./lib/uploads.js";
 
 const RESET_SQL = path.join(
   path.dirname(fileURLToPath(import.meta.url)), "..", "db", "reset.sql"
@@ -25,6 +27,7 @@ async function main() {
   console.warn("============================================================");
   console.warn(" WARNING: this DELETES all TalentMatch tables and data in");
   console.warn(`   ${formatTarget(target)}`);
+  console.warn(" and every uploaded resume file in uploads/resumes/.");
   console.warn(" This cannot be undone.");
   console.warn("============================================================");
 
@@ -47,6 +50,8 @@ async function main() {
     }
     const sql = await readFile(RESET_SQL, "utf8");
     await pool.query(sql);
+    const deleted = await clearUploadedResumes();
+    console.log(`Deleted ${deleted} uploaded resume file(s) from uploads/resumes/.`);
     console.log("Reset complete. Run `npm run db:migrate` and `npm run db:seed` next.");
   } finally {
     await pool.end();
