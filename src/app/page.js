@@ -53,6 +53,11 @@ async function SessionPanel() {
             Open candidate dashboard →
           </Link>
         )}
+        {user.role === "recruiter" && (
+          <Link href="/recruiter" className="mt-3 inline-flex rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
+            Open my jobs →
+          </Link>
+        )}
       </div>
       <LogoutButton />
     </div>

@@ -123,7 +123,7 @@ export default function CandidateDashboard() {
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><Link href="/" className="text-sm text-zinc-500 hover:underline">← TalentMatch home</Link><h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Candidate dashboard</h1><p className="mt-2 text-zinc-600 dark:text-zinc-400">Manage your profile, skills, and resumes.</p></div>
-        <div className="flex gap-2"><Link href="/candidate/jobs" className={secondaryClass}>Browse open jobs →</Link><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh data</button></div>
+        <div className="flex gap-2"><Link href="/candidate/jobs" className={secondaryClass}>Browse open jobs →</Link><Link href="/candidate/applications" className={secondaryClass}>My applications →</Link><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh data</button></div>
       </header>
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{error}</div>}
       {notice && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{notice}</div>}

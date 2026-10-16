@@ -34,3 +34,12 @@ export const jobSearchSchema = z.strictObject({
   employmentType: z.preprocess(emptyToUndefined, z.enum(EMPLOYMENT_TYPES).optional()),
   experience: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(60).optional()),
 });
+
+// POST /api/candidate/applications. candidate_id comes from the session.
+export const applicationCreateSchema = z.strictObject({
+  jobId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  resumeId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  coverLetter: z.union([z.string().trim().max(5000, "Cover letter must be at most 5,000 characters"), z.null()])
+    .optional()
+    .transform((v) => (v ? v : null)),
+});
