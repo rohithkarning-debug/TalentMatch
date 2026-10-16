@@ -40,7 +40,7 @@ export default function CandidateOffers() {
                 <Link href={`/candidate/jobs/${o.jobId}`} className="hover:underline">{o.jobTitle}</Link> <StatusBadge status={o.status} />
               </h2>
               <p className="text-sm text-slate-600">{o.company} · {o.location} · offered {formatDateTime(o.offeredAt)}</p>
-              <p className="mt-2 font-mono text-xl text-slate-900">{formatMoney(o.salaryOffered, o.currency)} <span className="font-sans text-sm text-slate-500">per year</span></p>
+              <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-slate-900">{formatMoney(o.salaryOffered, o.currency)} <span className="text-sm font-normal tracking-normal text-slate-500">per year</span></p>
               <p className="text-sm text-slate-700">Joining {formatDate(o.joiningDate)} · respond by {o.expiresOn ? formatDate(o.expiresOn) : "no deadline"}
                 {o.status === "pending" && o.isExpired && <span className="ml-2 font-medium text-red-600">expired</span>}</p>
               {o.respondedAt && <p className="text-xs text-slate-500">You responded {formatDateTime(o.respondedAt)}</p>}
