@@ -17,7 +17,7 @@ export default function MyApplications() {
   return <main className={pageClass}>
     <div className="mx-auto max-w-4xl space-y-6">
       <header>
-        <div className="flex gap-4 text-sm"><Link href="/candidate" className="text-zinc-500 hover:underline">← Candidate dashboard</Link><Link href="/candidate/jobs" className="text-zinc-500 hover:underline">Browse jobs →</Link></div>
+        <div className="flex gap-4 text-sm"><Link href="/candidate" className="text-zinc-500 hover:underline">← Candidate dashboard</Link><Link href="/candidate/jobs" className="text-zinc-500 hover:underline">Browse jobs →</Link><Link href="/candidate/interviews" className="text-zinc-500 hover:underline">Interviews</Link><Link href="/candidate/offers" className="text-zinc-500 hover:underline">Offers</Link><Link href="/notifications" className="text-zinc-500 hover:underline">Notifications</Link></div>
         <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">My applications</h1>
         <p className="mt-2 text-zinc-600 dark:text-zinc-400">Current status, match score and every status change, recorded by the database.</p>
       </header>
@@ -33,7 +33,7 @@ export default function MyApplications() {
               <p className="text-sm text-zinc-600 dark:text-zinc-400">{a.company} · {a.location} · applied {formatDateTime(a.appliedAt)}{a.jobStatus !== "open" && ` · job ${a.jobStatus}`}</p>
               <p className="text-xs text-zinc-500">Resume sent: {a.resumeFileName || "deleted"}</p>
               {a.nextInterviewAt && <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">Next interview: {formatDateTime(a.nextInterviewAt)}</p>}
-              {a.offerStatus && <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-300">Offer: {a.offerStatus}</p>}
+              {a.offerStatus && <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-300">Offer: {a.offerStatus} · <Link href="/candidate/offers" className="underline">view offer</Link></p>}
             </div>
             <div className="text-right">
               <p className="font-mono text-lg text-zinc-900 dark:text-zinc-50">{formatScore(a.matchScore)}</p>
