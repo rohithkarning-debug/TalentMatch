@@ -58,15 +58,18 @@ export default function CandidateDashboard() {
 
   async function saveProfile(e) {
     e.preventDefault(); setBusy(true); setError(""); setNotice("");
-    const payload = {
-      fullName: profile.fullName.trim(), phone: profile.phone.trim() || null,
-      location: profile.location.trim() || null, headline: profile.headline.trim() || null,
-      yearsExperience: Number(profile.yearsExperience || 0), highestEducation: profile.highestEducation.trim() || null,
-    };
-    const result = await request("/api/candidate/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    setBusy(false);
-    if (!result.ok) { setError(result.body?.error?.message || "Profile could not be saved."); return; }
-    setProfile(result.body.profile); setNotice("Profile saved successfully.");
+    // Optional columns come back from the API as null, so trim a "" fallback instead.
+    const text = (value) => (value ?? "").trim();
+    try {
+      const payload = {
+        fullName: text(profile.fullName), phone: text(profile.phone) || null,
+        location: text(profile.location) || null, headline: text(profile.headline) || null,
+        yearsExperience: Number(profile.yearsExperience || 0), highestEducation: text(profile.highestEducation) || null,
+      };
+      const result = await request("/api/candidate/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!result.ok) { setError(result.body?.error?.message || "Profile could not be saved."); return; }
+      setProfile(result.body.profile); setNotice("Profile saved successfully.");
+    } finally { setBusy(false); }
   }
 
   async function addSkill(e) {
