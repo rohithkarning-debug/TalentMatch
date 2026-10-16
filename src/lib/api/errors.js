@@ -42,7 +42,10 @@ export function handleApiError(err) {
     return jsonError(409, "CONFLICT", "This record already exists");
   }
   if (err?.code === "23503" || err?.code === "23514" || err?.code === "22P02") {
-    return jsonError(400, "INVALID_DATA", "The data violates a database rule");
+    // The constraint name (e.g. jobs_closes_after_posted_check) is part of our
+    // own schema, not a secret, and tells the user which rule was broken.
+    return jsonError(400, "INVALID_DATA", "The data violates a database rule",
+      err.constraint ? { constraint: err.constraint } : undefined);
   }
   console.error("[api] unexpected error:", err?.code || "", err?.message);
   return jsonError(500, "INTERNAL_ERROR", "Something went wrong. Please try again.");
