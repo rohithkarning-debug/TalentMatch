@@ -12,6 +12,7 @@
 //   - status colours mean the same thing everywhere (STATUS_STYLES)
 
 import { useEffect, useState } from "react";
+import { formatDate, formatDateTime } from "@/lib/format-date";
 
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2";
 
@@ -206,12 +207,12 @@ export function Icon({ name, className = "h-5 w-5" }) {
 }
 
 // ----------------------------------------------------------- formatting ----
+// Dates: "16 Oct 2026" / "16 Oct 2026, 8:49 pm", shared with the server code
+// that writes notification texts (src/lib/format-date.js).
+export { formatDate, formatDateTime };
+
 export const formatMoney = (amount, currency = "INR") =>
   `${currency === "INR" ? "₹" : `${currency} `}${Number(amount).toLocaleString("en-IN")}`;
-
-// "2026-11-16" -> "16 Nov 2026" without time-zone shifts (a DATE has no time).
-export const formatDate = (isoDate) => new Date(`${isoDate.slice(0, 10)}T00:00:00Z`)
-  .toLocaleDateString("en-IN", { timeZone: "UTC", dateStyle: "medium" });
 
 // Similarity is a cosine in [-1, 1]; null means "not computed yet".
 export const formatScore = (score) => (score == null ? "not scored" : score.toFixed(4));
@@ -224,8 +225,6 @@ export function formatSalary(job) {
   const range = [job.salaryMin, job.salaryMax].filter((v) => v != null).map(lakh).join(" – ");
   return `${job.currency === "INR" ? "₹" : `${job.currency} `}${range} per year`;
 }
-
-export const formatDateTime = (value) => new Date(value).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 
 // Vertical status timeline built from application_status_history rows.
 export function StatusTimeline({ history }) {

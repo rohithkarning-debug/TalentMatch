@@ -40,7 +40,7 @@ export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { user
       `SELECT j.job_id::int AS id, j.title, c.name AS company, j.location, j.work_mode AS "workMode",
               j.employment_type AS "employmentType", j.min_experience_years::float8 AS "minExperienceYears",
               j.salary_min::float8 AS "salaryMin", j.salary_max::float8 AS "salaryMax", j.currency,
-              j.openings, j.posted_at AS "postedAt", j.closes_at AS "closesAt", j.description,
+              j.openings, j.posted_at AS "postedAt", to_char(j.closes_at, 'YYYY-MM-DD') AS "closesAt", j.description,
               COALESCE((SELECT array_agg(s.name ORDER BY js.is_required DESC, s.name)
                           FROM job_skills js JOIN skills s ON s.skill_id = js.skill_id
                          WHERE js.job_id = j.job_id), '{}') AS skills,

@@ -36,6 +36,19 @@ const addDays = (n) => {
 const offerBody = () => ({ salaryOffered: 2_200_000, joiningDate: addDays(30), expiresOn: addDays(7) });
 const videoInterview = (hours = 48) => ({ scheduledAt: inHours(hours), mode: "video", locationOrLink: "https://meet.nimbusanalytics.example/stage7" });
 
+// An offer needs an interview that has taken place (no 'scheduled' one left,
+// migration 023): schedule one a few seconds ahead, wait, and complete it.
+async function holdInterview(applicationId) {
+  const soon = inSeconds(2);
+  const scheduled = await api(`/api/recruiter/applications/${applicationId}/interviews`, { method: "POST", cookie: meera,
+    json: { scheduledAt: soon, mode: "phone" } });
+  assert.equal(scheduled.status, 201, scheduled.text);
+  await waitUntilPassed(soon);
+  const done = await api(`/api/recruiter/interviews/${scheduled.body.interview.id}`, { method: "PATCH", cookie: meera,
+    json: { action: "complete", rating: 4, feedback: "Good discussion." } });
+  assert.equal(done.status, 200, done.text);
+}
+
 async function login(email, password = DEMO_PASSWORD) {
   const result = await api("/api/auth/login", { method: "POST", json: { email, password } });
   assert.equal(result.status, 200, result.text);
@@ -279,6 +292,46 @@ describe("interviews", () => {
 describe("offers: the make-offer transaction", () => {
   let offerId;
 
+  // Stage 10 regression (migration 023): an offer used to be accepted while
+  // the application still had a 'scheduled' interview.
+  it("an offer is refused while an interview is still scheduled (409 from trg_offers_interview_guard); nothing is saved", async () => {
+    const c = await newApplicant("pending-interview");
+    await api(`/api/recruiter/applications/${c.applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(24) })
+      .then((r) => assert.equal(r.status, 201, r.text));
+    const beforeState = await snapshot(c.applicationId);
+    assert.equal(beforeState.status, "interviewed");
+
+    const res = await api(`/api/recruiter/applications/${c.applicationId}/offer`, { method: "POST", cookie: meera, json: offerBody() });
+    assert.equal(res.status, 409, res.text);
+    assert.equal(res.body.error.code, "RULE_VIOLATION");
+    assert.equal(res.body.error.message, "Complete or cancel the scheduled interview before making an offer.");
+    assert.match(res.body.error.details.hint, /interview round 1 scheduled for/);
+    assert.deepEqual(await snapshot(c.applicationId), beforeState);
+
+    // The database refuses it without the API too.
+    await assert.rejects(db.query(
+      "INSERT INTO offers (application_id, salary_offered, joining_date, expires_on) VALUES ($1, 1500000, $2, $3)",
+      [c.applicationId, addDays(40), addDays(5)]),
+      (err) => err.code === "23514" && !err.constraint && /Complete or cancel the scheduled interview/.test(err.message));
+    assert.equal((await snapshot(c.applicationId)).offers, 0);
+  });
+
+  it("once the interview is cancelled (or completed) the offer goes through", async () => {
+    // cand.main still has round 1 scheduled (48 h ahead); cand.rollback's
+    // interview time has passed, so it can be completed.
+    const { rows: open } = await db.query(
+      `SELECT interview_id::int AS id, application_id::int AS "applicationId" FROM interviews
+        WHERE application_id = ANY($1::bigint[]) AND status = 'scheduled'`, [[cand.main.applicationId, cand.rollback.applicationId]]);
+    assert.equal(open.length, 2);
+    for (const iv of open) {
+      const json = iv.applicationId === cand.main.applicationId
+        ? { action: "cancel", reason: "Round 3 replaced it" }
+        : { action: "complete", rating: 4, feedback: "Good SQL." };
+      const res = await api(`/api/recruiter/interviews/${iv.id}`, { method: "PATCH", cookie: meera, json });
+      assert.equal(res.status, 200, res.text);
+    }
+  });
+
   it("success: offer row + 'offered' (history by trigger) + notifications, all together", async () => {
     const { applicationId, id: candidateId } = cand.main;
     const beforeState = await snapshot(applicationId);
@@ -294,6 +347,10 @@ describe("offers: the make-offer transaction", () => {
       "SELECT old_status, new_status, changed_by::int, note FROM application_status_history WHERE application_id = $1 ORDER BY history_id DESC LIMIT 1", [applicationId]);
     assert.deepEqual(h, { old_status: "interviewed", new_status: "offered", changed_by: meeraId, note: "Offer made" });
     assert.deepEqual((await notificationTypes(candidateId, applicationId)).slice(-2), ["status_changed", "offer_made"]);
+    // Stage 10: notification dates use the UI's format ("16 Nov 2026"), not ISO dates.
+    const { rows: [n] } = await db.query(
+      "SELECT message FROM notifications WHERE user_id = $1 AND related_application_id = $2 AND type = 'offer_made'", [candidateId, applicationId]);
+    assert.match(n.message, /joining on \d{1,2} [A-Z][a-z]{2} \d{4}\. Please respond by \d{1,2} [A-Z][a-z]{2} \d{4}\.$/);
   });
 
   it("forced rollback: a second offer (UNIQUE violation) is 409 and changes nothing", async () => {
@@ -397,8 +454,7 @@ describe("offers: the make-offer transaction", () => {
 
     it("an expired offer cannot be accepted (409 from the trigger); after an extension the candidate can decline", async () => {
       const { applicationId, cookie } = cand.expiry;
-      await api(`/api/recruiter/applications/${applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(5) })
-        .then((r) => assert.equal(r.status, 201, r.text));
+      await holdInterview(applicationId);
       const made = await api(`/api/recruiter/applications/${applicationId}/offer`, { method: "POST", cookie: meera, json: offerBody() });
       assert.equal(made.status, 201, made.text);
       const id = made.body.offer.id;
@@ -410,7 +466,7 @@ describe("offers: the make-offer transaction", () => {
       const notificationsBefore = (await snapshot(applicationId)).notifications;
       const res = await api(`/api/candidate/offers/${id}/respond`, { method: "POST", cookie, json: { decision: "accept" } });
       assert.equal(res.status, 409, res.text);
-      assert.match(res.body.error.message, /expired on/);
+      assert.match(res.body.error.message, /expired on \d{1,2} [A-Z][a-z]{2} \d{4};/);
       const { rows: [o] } = await db.query("SELECT status, responded_at FROM offers WHERE offer_id = $1", [id]);
       assert.deepEqual(o, { status: "pending", responded_at: null });
       assert.equal((await snapshot(applicationId)).notifications, notificationsBefore);
@@ -463,8 +519,7 @@ describe("offers: the make-offer transaction", () => {
 describe("rejecting an offered application withdraws its pending offer (trg_applications_withdraw_offer)", () => {
   async function offeredApplicant(tag) {
     const c = await newApplicant(tag);
-    await api(`/api/recruiter/applications/${c.applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(6) })
-      .then((r) => assert.equal(r.status, 201, r.text));
+    await holdInterview(c.applicationId);
     const made = await api(`/api/recruiter/applications/${c.applicationId}/offer`, { method: "POST", cookie: meera, json: offerBody() });
     assert.equal(made.status, 201, made.text);
     return { ...c, offerId: made.body.offer.id };
@@ -564,8 +619,7 @@ describe("offer response notifies the job poster and the offer maker", () => {
     assert.equal(res.status, 201, res.text);
     arjunJob = res.body.job;
     const c = await newApplicant("colleague", { jobId: arjunJob.id });
-    await api(`/api/recruiter/applications/${c.applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(8) })
-      .then((r) => assert.equal(r.status, 201, r.text));
+    await holdInterview(c.applicationId);
     const made = await api(`/api/recruiter/applications/${c.applicationId}/offer`, { method: "POST", cookie: meera, json: offerBody() });
     assert.equal(made.status, 201, made.text);
     const accepted = await api(`/api/candidate/offers/${made.body.offer.id}/respond`, { method: "POST", cookie: c.cookie, json: { decision: "accept" } });

@@ -11,7 +11,25 @@
 --
 -- match_score is intentionally left NULL: it will be computed from real
 -- embeddings with cosine similarity in the embeddings stage.
+--
+-- Dates are RELATIVE to the day the seed runs, so the demo is correct on any
+-- day: finished interviews and decided offers lie in the past, upcoming
+-- interviews, open jobs' closing dates and the pending offer's expiry lie in
+-- the future. Day 0 is "today" in India; seed_at(-47, '19:00') is 19:00 IST
+-- 47 days ago. Re-running the seed later inserts nothing new, so the dates
+-- of an existing demo do not move.
 -- ============================================================================
+
+-- Session-only helpers (pg_temp disappears when the seed's connection closes).
+CREATE OR REPLACE FUNCTION pg_temp.seed_day(days INTEGER) RETURNS DATE
+LANGUAGE sql STABLE AS $$ SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date + days $$;
+
+CREATE OR REPLACE FUNCTION pg_temp.seed_at(days INTEGER, hhmm TEXT) RETURNS TIMESTAMPTZ
+LANGUAGE sql STABLE AS $$ SELECT (pg_temp.seed_day(days) + hhmm::time) AT TIME ZONE 'Asia/Kolkata' $$;
+
+-- Same display format as the app's notification texts (src/lib/format-date.js).
+CREATE OR REPLACE FUNCTION pg_temp.seed_text(ts TIMESTAMPTZ) RETURNS TEXT
+LANGUAGE sql STABLE AS $$ SELECT to_char(ts AT TIME ZONE 'Asia/Kolkata', 'FMDD Mon YYYY, FMHH12:MI am') || ' IST' $$;
 
 -- Historical import mode (see migration 011). This seed inserts applications
 -- that are already past 'applied' plus their real, dated status history, so
@@ -26,25 +44,25 @@ INSERT INTO users (email, password_hash, full_name, role, created_at)
 SELECT v.email, '$2b$10$qYCMCdmT.qdfC2q8kd4WZuYcxb3.8emfuj2VIVZnakezYQb7rgtyC',
        v.full_name, v.role, v.created_at::timestamptz
 FROM (VALUES
-    ('admin@talentmatch.example',          'Platform Admin',       'admin',     '2026-07-01 09:00+05:30'),
+    ('admin@talentmatch.example',          'Platform Admin',       'admin',     pg_temp.seed_at(-99, '09:00')),
     -- recruiters
-    ('meera.iyer@nimbusanalytics.example', 'Meera Iyer',           'recruiter', '2026-07-05 10:00+05:30'),
-    ('arjun.rao@nimbusanalytics.example',  'Arjun Rao',            'recruiter', '2026-07-05 10:30+05:30'),
-    ('kavya.menon@kestrellabs.example',    'Kavya Menon',          'recruiter', '2026-07-08 11:00+05:30'),
-    ('rahul.kamath@orbitline.example',     'Rahul Kamath',         'recruiter', '2026-07-10 09:45+05:30'),
+    ('meera.iyer@nimbusanalytics.example', 'Meera Iyer',           'recruiter', pg_temp.seed_at(-95, '10:00')),
+    ('arjun.rao@nimbusanalytics.example',  'Arjun Rao',            'recruiter', pg_temp.seed_at(-95, '10:30')),
+    ('kavya.menon@kestrellabs.example',    'Kavya Menon',          'recruiter', pg_temp.seed_at(-92, '11:00')),
+    ('rahul.kamath@orbitline.example',     'Rahul Kamath',         'recruiter', pg_temp.seed_at(-90, '09:45')),
     -- candidates
-    ('aditi.sharma@mail.example',          'Aditi Sharma',         'candidate', '2026-08-01 18:20+05:30'),
-    ('rohan.verma@mail.example',           'Rohan Verma',          'candidate', '2026-08-02 20:10+05:30'),
-    ('sneha.kulkarni@mail.example',        'Sneha Kulkarni',       'candidate', '2026-08-03 12:00+05:30'),
-    ('vikram.chauhan@mail.example',        'Vikram Chauhan',       'candidate', '2026-08-04 09:30+05:30'),
-    ('ananya.gupta@mail.example',          'Ananya Gupta',         'candidate', '2026-08-05 21:15+05:30'),
-    ('karthik.subramanian@mail.example',   'Karthik Subramanian',  'candidate', '2026-08-06 08:40+05:30'),
-    ('ishita.banerjee@mail.example',       'Ishita Banerjee',      'candidate', '2026-08-07 19:05+05:30'),
-    ('farhan.qureshi@mail.example',        'Farhan Qureshi',       'candidate', '2026-08-08 16:30+05:30'),
-    ('neha.bhatt@mail.example',            'Neha Bhatt',           'candidate', '2026-08-09 10:10+05:30'),
-    ('siddharth.pillai@mail.example',      'Siddharth Pillai',     'candidate', '2026-08-10 22:00+05:30'),
-    ('divya.krishnan@mail.example',        'Divya Krishnan',       'candidate', '2026-08-11 14:25+05:30'),
-    ('aman.malhotra@mail.example',         'Aman Malhotra',        'candidate', '2026-08-12 17:50+05:30')
+    ('aditi.sharma@mail.example',          'Aditi Sharma',         'candidate', pg_temp.seed_at(-68, '18:20')),
+    ('rohan.verma@mail.example',           'Rohan Verma',          'candidate', pg_temp.seed_at(-67, '20:10')),
+    ('sneha.kulkarni@mail.example',        'Sneha Kulkarni',       'candidate', pg_temp.seed_at(-66, '12:00')),
+    ('vikram.chauhan@mail.example',        'Vikram Chauhan',       'candidate', pg_temp.seed_at(-65, '09:30')),
+    ('ananya.gupta@mail.example',          'Ananya Gupta',         'candidate', pg_temp.seed_at(-64, '21:15')),
+    ('karthik.subramanian@mail.example',   'Karthik Subramanian',  'candidate', pg_temp.seed_at(-63, '08:40')),
+    ('ishita.banerjee@mail.example',       'Ishita Banerjee',      'candidate', pg_temp.seed_at(-62, '19:05')),
+    ('farhan.qureshi@mail.example',        'Farhan Qureshi',       'candidate', pg_temp.seed_at(-61, '16:30')),
+    ('neha.bhatt@mail.example',            'Neha Bhatt',           'candidate', pg_temp.seed_at(-60, '10:10')),
+    ('siddharth.pillai@mail.example',      'Siddharth Pillai',     'candidate', pg_temp.seed_at(-59, '22:00')),
+    ('divya.krishnan@mail.example',        'Divya Krishnan',       'candidate', pg_temp.seed_at(-58, '14:25')),
+    ('aman.malhotra@mail.example',         'Aman Malhotra',        'candidate', pg_temp.seed_at(-57, '17:50'))
 ) AS v(email, full_name, role, created_at)
 ON CONFLICT (email) DO NOTHING;
 
@@ -160,28 +178,28 @@ SELECT c.company_id, u.user_id, v.title, v.description, v.location, v.work_mode,
 FROM (VALUES
     ('Nimbus Analytics Pvt Ltd', 'meera.iyer@nimbusanalytics.example', 'Machine Learning Engineer',
      'Design, train and deploy machine learning models for demand forecasting and product search. You will build NLP pipelines in Python and PyTorch, evaluate models rigorously, and package them as Docker services that serve predictions to our retail analytics platform.',
-     'Bengaluru', 'hybrid', 1800000, 2800000, 2, 'open', '2026-08-20 10:00+05:30', '2026-10-31', 'full_time', 2.0),
+     'Bengaluru', 'hybrid', 1800000, 2800000, 2, 'open', pg_temp.seed_at(-49, '10:00'), pg_temp.seed_day(23), 'full_time', 2.0),
     ('Nimbus Analytics Pvt Ltd', 'arjun.rao@nimbusanalytics.example', 'Data Analyst',
      'Turn raw sales and supply-chain data into clear insight. Write efficient SQL, build Power BI dashboards for client stakeholders, and use Python with Pandas for data cleaning and exploratory analysis. Strong communication and attention to detail are essential.',
-     'Bengaluru', 'onsite', 800000, 1200000, 3, 'open', '2026-08-25 11:00+05:30', '2026-10-25', 'full_time', 1.0),
+     'Bengaluru', 'onsite', 800000, 1200000, 3, 'open', pg_temp.seed_at(-44, '11:00'), pg_temp.seed_day(17), 'full_time', 1.0),
     ('Nimbus Analytics Pvt Ltd', 'meera.iyer@nimbusanalytics.example', 'NLP Research Intern',
      'Six-month internship working with our applied research team on text classification and semantic search. You will experiment with transformer models in PyTorch, run evaluations, and write clear reports on what worked and why.',
-     'Bengaluru', 'remote', 300000, 420000, 2, 'open', '2026-09-01 09:30+05:30', '2026-10-20', 'internship', 0.0),
+     'Bengaluru', 'remote', 300000, 420000, 2, 'open', pg_temp.seed_at(-37, '09:30'), pg_temp.seed_day(12), 'internship', 0.0),
     ('Kestrel Software Labs', 'kavya.menon@kestrellabs.example', 'Frontend Developer (React / Next.js)',
      'Build fast, accessible user interfaces for our scheduling product using React, Next.js and Tailwind CSS. Collaborate with designers to implement a component library, write maintainable JavaScript and TypeScript, and improve page performance.',
-     'Pune', 'hybrid', 1000000, 1600000, 2, 'open', '2026-08-28 10:15+05:30', '2026-10-30', 'full_time', 1.5),
+     'Pune', 'hybrid', 1000000, 1600000, 2, 'open', pg_temp.seed_at(-41, '10:15'), pg_temp.seed_day(22), 'full_time', 1.5),
     ('Kestrel Software Labs', 'kavya.menon@kestrellabs.example', 'Backend Engineer (Node.js)',
      'Develop and scale REST APIs in Node.js and Express backed by PostgreSQL. Design database schemas, write efficient queries, add automated tests, and containerise services with Docker for deployment through our CI/CD pipeline.',
-     'Pune', 'onsite', 1200000, 2000000, 1, 'open', '2026-09-03 12:00+05:30', '2026-11-05', 'full_time', 2.0),
+     'Pune', 'onsite', 1200000, 2000000, 1, 'open', pg_temp.seed_at(-35, '12:00'), pg_temp.seed_day(28), 'full_time', 2.0),
     ('Kestrel Software Labs', 'kavya.menon@kestrellabs.example', 'Full Stack Developer',
      'Own features end to end across a React frontend and a Node.js backend. This role is still being scoped with the product team and will be published once the hiring plan is approved.',
-     'Pune', 'remote', 1100000, 1800000, 1, 'draft', '2026-09-28 15:00+05:30', NULL, 'contract', 2.0),
+     'Pune', 'remote', 1100000, 1800000, 1, 'draft', pg_temp.seed_at(-10, '15:00'), NULL, 'contract', 2.0),
     ('Orbitline Cloud Systems', 'rahul.kamath@orbitline.example', 'DevOps Engineer',
      'Automate infrastructure on AWS using Terraform, run production workloads on Kubernetes, and maintain CI/CD pipelines for fifty-plus microservices. Experience with Docker, monitoring and incident response is expected.',
-     'Hyderabad', 'hybrid', 1400000, 2200000, 2, 'open', '2026-08-18 09:00+05:30', '2026-10-28', 'full_time', 3.0),
+     'Hyderabad', 'hybrid', 1400000, 2200000, 2, 'open', pg_temp.seed_at(-51, '09:00'), pg_temp.seed_day(20), 'full_time', 3.0),
     ('Orbitline Cloud Systems', 'rahul.kamath@orbitline.example', 'Site Reliability Engineer',
      'Keep critical fintech platforms reliable. Define SLOs, build observability with Prometheus and Grafana, harden Linux systems, and lead blameless post-incident reviews. Scripting in Python or Go is required.',
-     'Hyderabad', 'onsite', 2000000, 3200000, 1, 'closed', '2026-07-25 10:00+05:30', '2026-09-15', 'full_time', 4.0)
+     'Hyderabad', 'onsite', 2000000, 3200000, 1, 'closed', pg_temp.seed_at(-75, '10:00'), pg_temp.seed_day(-23), 'full_time', 4.0)
 ) AS v(company, recruiter_email, title, description, location, work_mode, salary_min, salary_max,
        openings, status, posted_at, closes_at, employment_type, min_exp)
 JOIN companies c ON c.name  = v.company
@@ -256,22 +274,22 @@ INSERT INTO applications (job_id, candidate_id, resume_id, status, applied_at, u
 SELECT j.job_id, u.user_id, r.resume_id, v.status,
        v.applied_at::timestamptz, v.updated_at::timestamptz, v.cover_letter
 FROM (VALUES
-    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  'interviewed', '2026-08-22 19:00+05:30', '2026-09-12 16:00+05:30', 'I have shipped NLP models to production and would love to work on product search.'),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'offered',     '2026-08-21 21:30+05:30', '2026-10-01 11:00+05:30', NULL),
-    ('Machine Learning Engineer', 'divya.krishnan@mail.example','shortlisted', '2026-08-30 13:00+05:30', '2026-09-08 10:00+05:30', 'My final-year project focused on transformer-based sentiment analysis.'),
-    ('Machine Learning Engineer', 'aman.malhotra@mail.example', 'rejected',    '2026-08-24 18:00+05:30', '2026-09-02 12:00+05:30', NULL),
-    ('Data Analyst', 'ishita.banerjee@mail.example',            'shortlisted', '2026-08-26 20:00+05:30', '2026-09-05 15:00+05:30', NULL),
-    ('Data Analyst', 'farhan.qureshi@mail.example',             'applied',     '2026-09-04 17:45+05:30', '2026-09-04 17:45+05:30', NULL),
-    ('Data Analyst', 'rohan.verma@mail.example',                'applied',     '2026-09-06 22:10+05:30', '2026-09-06 22:10+05:30', NULL),
-    ('NLP Research Intern', 'divya.krishnan@mail.example',      'applied',     '2026-09-02 11:20+05:30', '2026-09-02 11:20+05:30', NULL),
-    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 'interviewed', '2026-08-29 18:30+05:30', '2026-09-18 17:00+05:30', 'I recently migrated a site to Next.js and enjoy performance work.'),
-    ('Frontend Developer (React / Next.js)', 'vikram.chauhan@mail.example', 'applied',     '2026-09-10 09:15+05:30', '2026-09-10 09:15+05:30', NULL),
-    ('Frontend Developer (React / Next.js)', 'aman.malhotra@mail.example',  'shortlisted', '2026-09-01 20:40+05:30', '2026-09-09 11:30+05:30', NULL),
-    ('Backend Engineer (Node.js)', 'ananya.gupta@mail.example',             'applied',     '2026-09-05 19:50+05:30', '2026-09-05 19:50+05:30', 'Node.js and PostgreSQL are my daily tools.'),
-    ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example',      'rejected',    '2026-09-04 08:30+05:30', '2026-09-11 14:00+05:30', NULL),
-    ('DevOps Engineer', 'neha.bhatt@mail.example',                          'interviewed', '2026-08-19 10:30+05:30', '2026-09-10 18:00+05:30', 'I manage EKS clusters with Terraform and Argo CD today.'),
-    ('DevOps Engineer', 'siddharth.pillai@mail.example',                    'applied',     '2026-08-27 23:00+05:30', '2026-08-27 23:00+05:30', NULL),
-    ('Site Reliability Engineer', 'siddharth.pillai@mail.example',          'rejected',    '2026-07-28 21:00+05:30', '2026-08-10 12:00+05:30', NULL),
+    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  'interviewed', pg_temp.seed_at(-47, '19:00'), pg_temp.seed_at(-26, '16:00'), 'I have shipped NLP models to production and would love to work on product search.'),
+    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'offered',     pg_temp.seed_at(-48, '21:30'), pg_temp.seed_at(-7, '11:00'), NULL),
+    ('Machine Learning Engineer', 'divya.krishnan@mail.example','shortlisted', pg_temp.seed_at(-39, '13:00'), pg_temp.seed_at(-30, '10:00'), 'My final-year project focused on transformer-based sentiment analysis.'),
+    ('Machine Learning Engineer', 'aman.malhotra@mail.example', 'rejected',    pg_temp.seed_at(-45, '18:00'), pg_temp.seed_at(-36, '12:00'), NULL),
+    ('Data Analyst', 'ishita.banerjee@mail.example',            'shortlisted', pg_temp.seed_at(-43, '20:00'), pg_temp.seed_at(-33, '15:00'), NULL),
+    ('Data Analyst', 'farhan.qureshi@mail.example',             'applied',     pg_temp.seed_at(-34, '17:45'), pg_temp.seed_at(-34, '17:45'), NULL),
+    ('Data Analyst', 'rohan.verma@mail.example',                'applied',     pg_temp.seed_at(-32, '22:10'), pg_temp.seed_at(-32, '22:10'), NULL),
+    ('NLP Research Intern', 'divya.krishnan@mail.example',      'applied',     pg_temp.seed_at(-36, '11:20'), pg_temp.seed_at(-36, '11:20'), NULL),
+    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 'interviewed', pg_temp.seed_at(-40, '18:30'), pg_temp.seed_at(-20, '17:00'), 'I recently migrated a site to Next.js and enjoy performance work.'),
+    ('Frontend Developer (React / Next.js)', 'vikram.chauhan@mail.example', 'applied',     pg_temp.seed_at(-28, '09:15'), pg_temp.seed_at(-28, '09:15'), NULL),
+    ('Frontend Developer (React / Next.js)', 'aman.malhotra@mail.example',  'shortlisted', pg_temp.seed_at(-37, '20:40'), pg_temp.seed_at(-29, '11:30'), NULL),
+    ('Backend Engineer (Node.js)', 'ananya.gupta@mail.example',             'applied',     pg_temp.seed_at(-33, '19:50'), pg_temp.seed_at(-33, '19:50'), 'Node.js and PostgreSQL are my daily tools.'),
+    ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example',      'rejected',    pg_temp.seed_at(-34, '08:30'), pg_temp.seed_at(-27, '14:00'), NULL),
+    ('DevOps Engineer', 'neha.bhatt@mail.example',                          'interviewed', pg_temp.seed_at(-50, '10:30'), pg_temp.seed_at(-28, '18:00'), 'I manage EKS clusters with Terraform and Argo CD today.'),
+    ('DevOps Engineer', 'siddharth.pillai@mail.example',                    'applied',     pg_temp.seed_at(-42, '23:00'), pg_temp.seed_at(-42, '23:00'), NULL),
+    ('Site Reliability Engineer', 'siddharth.pillai@mail.example',          'rejected',    pg_temp.seed_at(-72, '21:00'), pg_temp.seed_at(-59, '12:00'), NULL),
     -- Two finished hiring stories (Stage 9), so the dashboard's offer
     -- acceptance rate has real accepted AND declined offers to count:
     --   Neha accepted the SRE offer (the job was closed once it was filled);
@@ -279,8 +297,8 @@ FROM (VALUES
     --   application to close it out. There is no 'hired' status: an
     --   accepted offer leaves the application at 'offered', exactly as
     --   the accept transaction in the app does.
-    ('Site Reliability Engineer', 'neha.bhatt@mail.example',                'offered',     '2026-07-30 10:00+05:30', '2026-08-18 12:00+05:30', 'I run Kubernetes in production and own our on-call rotation.'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example',            'rejected',    '2026-09-06 20:00+05:30', '2026-10-06 10:00+05:30', 'I build Express APIs on Node.js every day and want to go deeper on PostgreSQL.')
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example',                'offered',     pg_temp.seed_at(-70, '10:00'), pg_temp.seed_at(-51, '12:00'), 'I run Kubernetes in production and own our on-call rotation.'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example',            'rejected',    pg_temp.seed_at(-32, '20:00'), pg_temp.seed_at(-2, '10:00'), 'I build Express APIs on Node.js every day and want to go deeper on PostgreSQL.')
 ) AS v(title, email, status, applied_at, updated_at, cover_letter)
 JOIN jobs j    ON j.title = v.title
 JOIN users u   ON u.email = v.email
@@ -296,46 +314,46 @@ SELECT a.application_id, v.old_status, v.new_status,
        CASE WHEN v.old_status IS NULL THEN a.candidate_id ELSE j.recruiter_id END,
        v.note, v.changed_at::timestamptz
 FROM (VALUES
-    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  NULL, 'applied', 'Application submitted', '2026-08-22 19:00+05:30'),
-    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  'applied', 'shortlisted', 'Strong NLP background', '2026-08-28 11:00+05:30'),
-    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  'shortlisted', 'interviewed', 'Round 1 completed', '2026-09-12 16:00+05:30'),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example',   NULL, 'applied', 'Application submitted', '2026-08-21 21:30+05:30'),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'applied', 'shortlisted', NULL, '2026-08-27 10:00+05:30'),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'shortlisted', 'interviewed', 'Both rounds completed', '2026-09-20 17:30+05:30'),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'interviewed', 'offered', 'Offer approved by hiring manager', '2026-10-01 11:00+05:30'),
-    ('Machine Learning Engineer', 'divya.krishnan@mail.example',NULL, 'applied', 'Application submitted', '2026-08-30 13:00+05:30'),
-    ('Machine Learning Engineer', 'divya.krishnan@mail.example','applied', 'shortlisted', 'Promising graduate profile', '2026-09-08 10:00+05:30'),
-    ('Machine Learning Engineer', 'aman.malhotra@mail.example', NULL, 'applied', 'Application submitted', '2026-08-24 18:00+05:30'),
-    ('Machine Learning Engineer', 'aman.malhotra@mail.example', 'applied', 'rejected', 'Limited ML experience', '2026-09-02 12:00+05:30'),
-    ('Data Analyst', 'ishita.banerjee@mail.example', NULL, 'applied', 'Application submitted', '2026-08-26 20:00+05:30'),
-    ('Data Analyst', 'ishita.banerjee@mail.example', 'applied', 'shortlisted', 'Power BI portfolio looks good', '2026-09-05 15:00+05:30'),
-    ('Data Analyst', 'farhan.qureshi@mail.example',  NULL, 'applied', 'Application submitted', '2026-09-04 17:45+05:30'),
-    ('Data Analyst', 'rohan.verma@mail.example',     NULL, 'applied', 'Application submitted', '2026-09-06 22:10+05:30'),
-    ('NLP Research Intern', 'divya.krishnan@mail.example', NULL, 'applied', 'Application submitted', '2026-09-02 11:20+05:30'),
-    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', NULL, 'applied', 'Application submitted', '2026-08-29 18:30+05:30'),
-    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 'applied', 'shortlisted', NULL, '2026-09-04 12:00+05:30'),
-    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 'shortlisted', 'interviewed', 'Technical round completed', '2026-09-18 17:00+05:30'),
-    ('Frontend Developer (React / Next.js)', 'vikram.chauhan@mail.example', NULL, 'applied', 'Application submitted', '2026-09-10 09:15+05:30'),
-    ('Frontend Developer (React / Next.js)', 'aman.malhotra@mail.example',  NULL, 'applied', 'Application submitted', '2026-09-01 20:40+05:30'),
-    ('Frontend Developer (React / Next.js)', 'aman.malhotra@mail.example',  'applied', 'shortlisted', 'Good React projects', '2026-09-09 11:30+05:30'),
-    ('Backend Engineer (Node.js)', 'ananya.gupta@mail.example',        NULL, 'applied', 'Application submitted', '2026-09-05 19:50+05:30'),
-    ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example', NULL, 'applied', 'Application submitted', '2026-09-04 08:30+05:30'),
-    ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example', 'applied', 'rejected', 'Role requires Node.js; candidate is Java-focused', '2026-09-11 14:00+05:30'),
-    ('DevOps Engineer', 'neha.bhatt@mail.example',       NULL, 'applied', 'Application submitted', '2026-08-19 10:30+05:30'),
-    ('DevOps Engineer', 'neha.bhatt@mail.example',       'applied', 'shortlisted', NULL, '2026-08-25 09:00+05:30'),
-    ('DevOps Engineer', 'neha.bhatt@mail.example',       'shortlisted', 'interviewed', 'Round 1 completed', '2026-09-10 18:00+05:30'),
-    ('DevOps Engineer', 'siddharth.pillai@mail.example', NULL, 'applied', 'Application submitted', '2026-08-27 23:00+05:30'),
-    ('Site Reliability Engineer', 'siddharth.pillai@mail.example', NULL, 'applied', 'Application submitted', '2026-07-28 21:00+05:30'),
-    ('Site Reliability Engineer', 'siddharth.pillai@mail.example', 'applied', 'rejected', 'Needs more SRE experience', '2026-08-10 12:00+05:30'),
-    ('Site Reliability Engineer', 'neha.bhatt@mail.example', NULL, 'applied', 'Application submitted', '2026-07-30 10:00+05:30'),
-    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'applied', 'shortlisted', 'Strong Kubernetes and on-call background', '2026-08-04 11:00+05:30'),
-    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'shortlisted', 'interviewed', 'Round 1 completed', '2026-08-11 16:30+05:30'),
-    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'interviewed', 'offered', 'Offer approved by engineering head', '2026-08-18 12:00+05:30'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', NULL, 'applied', 'Application submitted', '2026-09-06 20:00+05:30'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'applied', 'shortlisted', 'Solid Express and REST API projects', '2026-09-12 10:00+05:30'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'shortlisted', 'interviewed', 'Technical round completed', '2026-09-19 15:30+05:30'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'interviewed', 'offered', 'Offer approved', '2026-09-29 11:00+05:30'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'offered', 'rejected', 'Candidate declined the offer', '2026-10-06 10:00+05:30')
+    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  NULL, 'applied', 'Application submitted', pg_temp.seed_at(-47, '19:00')),
+    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  'applied', 'shortlisted', 'Strong NLP background', pg_temp.seed_at(-41, '11:00')),
+    ('Machine Learning Engineer', 'aditi.sharma@mail.example',  'shortlisted', 'interviewed', 'Round 1 completed', pg_temp.seed_at(-26, '16:00')),
+    ('Machine Learning Engineer', 'rohan.verma@mail.example',   NULL, 'applied', 'Application submitted', pg_temp.seed_at(-48, '21:30')),
+    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'applied', 'shortlisted', NULL, pg_temp.seed_at(-42, '10:00')),
+    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'shortlisted', 'interviewed', 'Both rounds completed', pg_temp.seed_at(-18, '17:30')),
+    ('Machine Learning Engineer', 'rohan.verma@mail.example',   'interviewed', 'offered', 'Offer approved by hiring manager', pg_temp.seed_at(-7, '11:00')),
+    ('Machine Learning Engineer', 'divya.krishnan@mail.example',NULL, 'applied', 'Application submitted', pg_temp.seed_at(-39, '13:00')),
+    ('Machine Learning Engineer', 'divya.krishnan@mail.example','applied', 'shortlisted', 'Promising graduate profile', pg_temp.seed_at(-30, '10:00')),
+    ('Machine Learning Engineer', 'aman.malhotra@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-45, '18:00')),
+    ('Machine Learning Engineer', 'aman.malhotra@mail.example', 'applied', 'rejected', 'Limited ML experience', pg_temp.seed_at(-36, '12:00')),
+    ('Data Analyst', 'ishita.banerjee@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-43, '20:00')),
+    ('Data Analyst', 'ishita.banerjee@mail.example', 'applied', 'shortlisted', 'Power BI portfolio looks good', pg_temp.seed_at(-33, '15:00')),
+    ('Data Analyst', 'farhan.qureshi@mail.example',  NULL, 'applied', 'Application submitted', pg_temp.seed_at(-34, '17:45')),
+    ('Data Analyst', 'rohan.verma@mail.example',     NULL, 'applied', 'Application submitted', pg_temp.seed_at(-32, '22:10')),
+    ('NLP Research Intern', 'divya.krishnan@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-36, '11:20')),
+    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-40, '18:30')),
+    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 'applied', 'shortlisted', NULL, pg_temp.seed_at(-34, '12:00')),
+    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 'shortlisted', 'interviewed', 'Technical round completed', pg_temp.seed_at(-20, '17:00')),
+    ('Frontend Developer (React / Next.js)', 'vikram.chauhan@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-28, '09:15')),
+    ('Frontend Developer (React / Next.js)', 'aman.malhotra@mail.example',  NULL, 'applied', 'Application submitted', pg_temp.seed_at(-37, '20:40')),
+    ('Frontend Developer (React / Next.js)', 'aman.malhotra@mail.example',  'applied', 'shortlisted', 'Good React projects', pg_temp.seed_at(-29, '11:30')),
+    ('Backend Engineer (Node.js)', 'ananya.gupta@mail.example',        NULL, 'applied', 'Application submitted', pg_temp.seed_at(-33, '19:50')),
+    ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-34, '08:30')),
+    ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example', 'applied', 'rejected', 'Role requires Node.js; candidate is Java-focused', pg_temp.seed_at(-27, '14:00')),
+    ('DevOps Engineer', 'neha.bhatt@mail.example',       NULL, 'applied', 'Application submitted', pg_temp.seed_at(-50, '10:30')),
+    ('DevOps Engineer', 'neha.bhatt@mail.example',       'applied', 'shortlisted', NULL, pg_temp.seed_at(-44, '09:00')),
+    ('DevOps Engineer', 'neha.bhatt@mail.example',       'shortlisted', 'interviewed', 'Round 1 completed', pg_temp.seed_at(-28, '18:00')),
+    ('DevOps Engineer', 'siddharth.pillai@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-42, '23:00')),
+    ('Site Reliability Engineer', 'siddharth.pillai@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-72, '21:00')),
+    ('Site Reliability Engineer', 'siddharth.pillai@mail.example', 'applied', 'rejected', 'Needs more SRE experience', pg_temp.seed_at(-59, '12:00')),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-70, '10:00')),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'applied', 'shortlisted', 'Strong Kubernetes and on-call background', pg_temp.seed_at(-65, '11:00')),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'shortlisted', 'interviewed', 'Round 1 completed', pg_temp.seed_at(-58, '16:30')),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'interviewed', 'offered', 'Offer approved by engineering head', pg_temp.seed_at(-51, '12:00')),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', NULL, 'applied', 'Application submitted', pg_temp.seed_at(-32, '20:00')),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'applied', 'shortlisted', 'Solid Express and REST API projects', pg_temp.seed_at(-26, '10:00')),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'shortlisted', 'interviewed', 'Technical round completed', pg_temp.seed_at(-19, '15:30')),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'interviewed', 'offered', 'Offer approved', pg_temp.seed_at(-9, '11:00')),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'offered', 'rejected', 'Candidate declined the offer', pg_temp.seed_at(-2, '10:00'))
 ) AS v(title, email, old_status, new_status, note, changed_at)
 JOIN jobs j         ON j.title = v.title
 JOIN users u        ON u.email = v.email
@@ -351,23 +369,23 @@ INSERT INTO interviews (application_id, round_no, scheduled_at, duration_minutes
 SELECT a.application_id, v.round_no, v.scheduled_at::timestamptz, v.duration, v.mode,
        v.link, j.recruiter_id, v.status, v.rating, v.feedback
 FROM (VALUES
-    ('Machine Learning Engineer', 'aditi.sharma@mail.example', 1, '2026-09-12 15:00+05:30', 60, 'video',
+    ('Machine Learning Engineer', 'aditi.sharma@mail.example', 1, pg_temp.seed_at(-26, '15:00'), 60, 'video',
      'https://meet.nimbusanalytics.example/ml-r1-aditi', 'completed', 4, 'Solid NLP fundamentals; clear explanation of evaluation metrics.'),
-    ('Machine Learning Engineer', 'aditi.sharma@mail.example', 2, '2026-10-14 11:00+05:30', 90, 'onsite',
+    ('Machine Learning Engineer', 'aditi.sharma@mail.example', 2, pg_temp.seed_at(6, '11:00'), 90, 'onsite',
      'Nimbus Analytics, Koramangala office', 'scheduled', NULL, NULL),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example', 1, '2026-09-10 14:00+05:30', 60, 'video',
+    ('Machine Learning Engineer', 'rohan.verma@mail.example', 1, pg_temp.seed_at(-28, '14:00'), 60, 'video',
      'https://meet.nimbusanalytics.example/ml-r1-rohan', 'completed', 5, 'Excellent modelling depth and statistics.'),
-    ('Machine Learning Engineer', 'rohan.verma@mail.example', 2, '2026-09-20 16:00+05:30', 90, 'onsite',
+    ('Machine Learning Engineer', 'rohan.verma@mail.example', 2, pg_temp.seed_at(-18, '16:00'), 90, 'onsite',
      'Nimbus Analytics, Koramangala office', 'completed', 4, 'Good system-design discussion for model serving.'),
-    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 1, '2026-09-18 16:00+05:30', 60, 'video',
+    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 1, pg_temp.seed_at(-20, '16:00'), 60, 'video',
      'https://meet.kestrellabs.example/fe-r1-sneha', 'completed', 4, 'Strong React skills; good accessibility awareness.'),
-    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 2, '2026-10-13 15:00+05:30', 60, 'video',
+    ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 2, pg_temp.seed_at(5, '15:00'), 60, 'video',
      'https://meet.kestrellabs.example/fe-r2-sneha', 'scheduled', NULL, NULL),
-    ('DevOps Engineer', 'neha.bhatt@mail.example', 1, '2026-09-10 17:00+05:30', 60, 'phone',
+    ('DevOps Engineer', 'neha.bhatt@mail.example', 1, pg_temp.seed_at(-28, '17:00'), 60, 'phone',
      NULL, 'completed', 4, 'Deep Kubernetes experience; asked good questions about our on-call process.'),
-    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 1, '2026-08-11 15:00+05:30', 60, 'video',
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 1, pg_temp.seed_at(-58, '15:00'), 60, 'video',
      'https://meet.orbitline.example/sre-r1-neha', 'completed', 5, 'Excellent incident-response examples; strong Prometheus and Kubernetes depth.'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 1, '2026-09-19 14:00+05:30', 60, 'video',
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 1, pg_temp.seed_at(-19, '14:00'), 60, 'video',
      'https://meet.kestrellabs.example/be-r1-aman', 'completed', 4, 'Clean API design and good SQL; less experience tuning PostgreSQL.')
 ) AS v(title, email, round_no, scheduled_at, duration, mode, link, status, rating, feedback)
 JOIN jobs j         ON j.title = v.title
@@ -382,12 +400,12 @@ INSERT INTO offers (application_id, salary_offered, joining_date, expires_on, st
 SELECT a.application_id, v.salary, v.joining_date::date, v.expires_on::date, v.status,
        v.offered_at::timestamptz, v.responded_at::timestamptz
 FROM (VALUES
-    ('Machine Learning Engineer',  'rohan.verma@mail.example',   2600000, '2026-11-16', '2026-10-20', 'pending',
-     '2026-10-01 11:00+05:30', NULL),
-    ('Site Reliability Engineer',  'neha.bhatt@mail.example',    2900000, '2026-09-21', '2026-08-25', 'accepted',
-     '2026-08-18 12:00+05:30', '2026-08-21 10:30+05:30'),
-    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 1500000, '2026-11-02', '2026-10-08', 'declined',
-     '2026-09-29 11:00+05:30', '2026-10-05 18:00+05:30')
+    ('Machine Learning Engineer',  'rohan.verma@mail.example',   2600000, pg_temp.seed_day(39), pg_temp.seed_day(12), 'pending',
+     pg_temp.seed_at(-7, '11:00'), NULL),
+    ('Site Reliability Engineer',  'neha.bhatt@mail.example',    2900000, pg_temp.seed_day(-17), pg_temp.seed_day(-44), 'accepted',
+     pg_temp.seed_at(-51, '12:00'), pg_temp.seed_at(-48, '10:30')),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 1500000, pg_temp.seed_day(25), pg_temp.seed_day(0), 'declined',
+     pg_temp.seed_at(-9, '11:00'), pg_temp.seed_at(-3, '18:00'))
 ) AS v(title, email, salary, joining_date, expires_on, status, offered_at, responded_at)
 JOIN jobs j         ON j.title = v.title
 JOIN users u        ON u.email = v.email
@@ -399,25 +417,25 @@ INSERT INTO notifications (user_id, type, title, message, related_application_id
 SELECT v_user.user_id, v.type, v.title, v.message, a.application_id, v.is_read, v.created_at::timestamptz
 FROM (VALUES
     ('rohan.verma@mail.example', 'rohan.verma@mail.example', 'Machine Learning Engineer', 'offer_made',
-     'You have received an offer', 'Nimbus Analytics Pvt Ltd has sent you an offer for Machine Learning Engineer.', FALSE, '2026-10-01 11:00+05:30'),
+     'You have received an offer', 'Nimbus Analytics Pvt Ltd has sent you an offer for Machine Learning Engineer.', FALSE, pg_temp.seed_at(-7, '11:00')),
     ('aditi.sharma@mail.example', 'aditi.sharma@mail.example', 'Machine Learning Engineer', 'interview_scheduled',
-     'Interview round 2 scheduled', 'Your onsite interview for Machine Learning Engineer is on 14 Oct 2026 at 11:00.', FALSE, '2026-10-03 10:00+05:30'),
+     'Interview round 2 scheduled', 'Your onsite interview for Machine Learning Engineer is on ' || pg_temp.seed_text(pg_temp.seed_at(6, '11:00')) || '.', FALSE, pg_temp.seed_at(-5, '10:00')),
     ('sneha.kulkarni@mail.example', 'sneha.kulkarni@mail.example', 'Frontend Developer (React / Next.js)', 'interview_scheduled',
-     'Interview round 2 scheduled', 'Your video interview for Frontend Developer is on 13 Oct 2026 at 15:00.', TRUE, '2026-10-02 12:00+05:30'),
+     'Interview round 2 scheduled', 'Your video interview for Frontend Developer is on ' || pg_temp.seed_text(pg_temp.seed_at(5, '15:00')) || '.', TRUE, pg_temp.seed_at(-6, '12:00')),
     ('karthik.subramanian@mail.example', 'karthik.subramanian@mail.example', 'Backend Engineer (Node.js)', 'status_changed',
-     'Application update', 'Your application for Backend Engineer (Node.js) was not taken forward.', TRUE, '2026-09-11 14:00+05:30'),
+     'Application update', 'Your application for Backend Engineer (Node.js) was not taken forward.', TRUE, pg_temp.seed_at(-27, '14:00')),
     ('kavya.menon@kestrellabs.example', 'vikram.chauhan@mail.example', 'Frontend Developer (React / Next.js)', 'application_submitted',
-     'New application received', 'Vikram Chauhan applied for Frontend Developer (React / Next.js).', FALSE, '2026-09-10 09:15+05:30'),
+     'New application received', 'Vikram Chauhan applied for Frontend Developer (React / Next.js).', FALSE, pg_temp.seed_at(-28, '09:15')),
     ('rahul.kamath@orbitline.example', 'siddharth.pillai@mail.example', 'DevOps Engineer', 'application_submitted',
-     'New application received', 'Siddharth Pillai applied for DevOps Engineer.', TRUE, '2026-08-27 23:00+05:30'),
+     'New application received', 'Siddharth Pillai applied for DevOps Engineer.', TRUE, pg_temp.seed_at(-42, '23:00')),
     ('neha.bhatt@mail.example', 'neha.bhatt@mail.example', 'Site Reliability Engineer', 'offer_made',
-     'You have received an offer', 'Orbitline Cloud Systems has sent you an offer for Site Reliability Engineer.', TRUE, '2026-08-18 12:00+05:30'),
+     'You have received an offer', 'Orbitline Cloud Systems has sent you an offer for Site Reliability Engineer.', TRUE, pg_temp.seed_at(-51, '12:00')),
     ('rahul.kamath@orbitline.example', 'neha.bhatt@mail.example', 'Site Reliability Engineer', 'offer_responded',
-     'Offer accepted: Site Reliability Engineer', 'Neha Bhatt accepted your offer for Site Reliability Engineer.', TRUE, '2026-08-21 10:30+05:30'),
+     'Offer accepted: Site Reliability Engineer', 'Neha Bhatt accepted your offer for Site Reliability Engineer.', TRUE, pg_temp.seed_at(-48, '10:30')),
     ('aman.malhotra@mail.example', 'aman.malhotra@mail.example', 'Backend Engineer (Node.js)', 'offer_made',
-     'You have received an offer', 'Kestrel Software Labs has sent you an offer for Backend Engineer (Node.js).', TRUE, '2026-09-29 11:00+05:30'),
+     'You have received an offer', 'Kestrel Software Labs has sent you an offer for Backend Engineer (Node.js).', TRUE, pg_temp.seed_at(-9, '11:00')),
     ('kavya.menon@kestrellabs.example', 'aman.malhotra@mail.example', 'Backend Engineer (Node.js)', 'offer_responded',
-     'Offer declined: Backend Engineer (Node.js)', 'Aman Malhotra declined your offer for Backend Engineer (Node.js).', FALSE, '2026-10-05 18:00+05:30')
+     'Offer declined: Backend Engineer (Node.js)', 'Aman Malhotra declined your offer for Backend Engineer (Node.js).', FALSE, pg_temp.seed_at(-3, '18:00'))
 ) AS v(recipient_email, candidate_email, title_of_job, type, title, message, is_read, created_at)
 JOIN users v_user   ON v_user.email = v.recipient_email
 JOIN users cand     ON cand.email   = v.candidate_email
@@ -425,7 +443,7 @@ JOIN jobs j         ON j.title      = v.title_of_job
 JOIN applications a ON a.job_id = j.job_id AND a.candidate_id = cand.user_id
 WHERE NOT EXISTS (
     SELECT 1 FROM notifications n
-    WHERE n.user_id = v_user.user_id AND n.title = v.title AND n.created_at = v.created_at::timestamptz
+    WHERE n.user_id = v_user.user_id AND n.title = v.title AND n.related_application_id = a.application_id
 );
 
 -- ------------------------------------------- derived: applicant_count ----
