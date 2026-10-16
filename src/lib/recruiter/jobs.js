@@ -1,4 +1,4 @@
-import { forbidden, notFound } from "../api/errors.js";
+import { forbidden, notFound } from "../api/api-error.js";
 import { query as defaultQuery } from "../db.js";
 
 // Shared SQL for the recruiter job routes. Ownership rule: a recruiter may
