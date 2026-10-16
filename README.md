@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 5 (semantic matching: local MiniLM embeddings for resumes and jobs, pgvector cosine ranking in `rank_candidates_for_job()`, and the recruiter matches API) is done. Applying to jobs and the recruiter module (job posting, pipeline UI) come next.
+> Status: Stage 6 is done. That covers the recruiter module (job create/edit/status/delete scoped to the recruiter's company, ranked applicants, search all candidates, and a status pipeline through `update_application_status()`), and applications (an apply transaction with a real pgvector match score, My Applications with a status history timeline, and a skill-gap view). Interviews, offers, notifications UI and the admin dashboard come next.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ Login uses an httpOnly session cookie that holds a signed JWT. Every API route c
 ```powershell
 npm run test:unit          # unit tests (no server/DB needed; embedding tests use the cached model)
 npm run build              # integration tests use the production build
-npm run test:integration   # starts the app (ports 3100-3102) and tests the real API + DB + model
+npm run test:integration   # starts the app (ports 3100-3103) and tests the real API + DB + model
 ```
 
 ## Semantic matching
@@ -70,13 +70,29 @@ Resumes and jobs are embedded locally with `sentence-transformers/all-MiniLM-L6-
 |---|---|
 | `GET /api/recruiter/jobs/:jobId/matches?applicantsOnly=true\|false&limit=N` | Ranked candidates for a job of the recruiter's own company (200 / 400 / 401 / 403 / 404) |
 
+## Recruiter module and applications (Stage 6)
+
+Pages: recruiter `/recruiter` (My Jobs), `/recruiter/jobs/new`, `/recruiter/jobs/:id` (tabs "Ranked applicants" and "Search all candidates"), `/recruiter/jobs/:id/edit`. Candidate: `/candidate/jobs/:id` (skill gap and Apply), `/candidate/applications`.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET / POST /api/recruiter/jobs` | List / create jobs of the recruiter's company (job is embedded after COMMIT) |
+| `GET / PATCH / DELETE /api/recruiter/jobs/:jobId` | View, edit (fields, status draft/open/closed, skills), delete; 403 for other companies, 409 if the job has applications |
+| `GET /api/recruiter/jobs/:jobId/applications` | Applicants ranked by `match_score`, with matched/required skills and history |
+| `PATCH /api/recruiter/applications/:applicationId` | Change status via `update_application_status()`; invalid transitions → 409 with the database's message |
+| `GET / POST /api/candidate/applications` | My applications with history / apply (one transaction; 409 duplicate or closed job) |
+| `GET /api/candidate/jobs/:jobId` | Job details, skill gap (`EXCEPT`), and my application |
+| `GET /api/skills` | Skill catalogue (any signed-in user) |
+
+`applications.match_score` = `compute_match_score(resume, job)` = `1 - (resume <=> job)` for the resume chosen when applying, or NULL if either side is not embedded yet. `npm run db:embed` fills in such NULL scores later. Details: [advanced-features.md §7–8](docs/advanced-features.md).
+
 ## Database scripts
 
 | Command | What it does |
 |---|---|
 | `npm run db:migrate` | Applies new files in `db/migrations/` in order. Already-applied files are skipped (tracked in `tm_meta.schema_migrations`). |
 | `npm run db:seed` | Loads fictional demo data from `db/seed/seed.sql`. Safe to run more than once. |
-| `npm run db:embed` | Embeds every resume and job that has no embedding yet (or whose text or model changed). Safe to run more than once. |
+| `npm run db:embed` | Embeds every resume and job that has no embedding yet (or whose text or model changed), then fills in any NULL application match scores. Safe to run more than once. |
 | `npm run db:reset` | **Destructive.** Drops all TalentMatch tables and data. It only works on the local Docker dev database and asks you to type the database name. Add `-- --yes` to skip the prompt. |
 
 SQL scripts (PowerShell, from the project root):

@@ -31,16 +31,34 @@ export const GET = withAuth({ roles: [ROLES.RECRUITER] }, async (request, { user
     throw new ApiError(404, "NOT_EMBEDDED", "This job has no embedding yet, so it cannot be matched. Run `npm run db:embed` or save the job again.");
   }
 
+  // The ranking itself comes unchanged from the function (its ORDER BY is
+  // kept via WITH ORDINALITY). The extra columns only describe each row:
+  // skill names behind the matched/required counts, and the application (if
+  // the candidate applied) so the UI can link to it.
   const matches = await query(
-    `SELECT candidate_id::int AS "candidateId", full_name AS "fullName",
-            years_experience::float8 AS "yearsExperience", resume_id::int AS "resumeId",
-            similarity::float8 AS similarity, matched_skills AS "matchedSkills",
-            required_skills AS "requiredSkills", has_applied AS "hasApplied"
-       FROM rank_candidates_for_job($1, $2, $3)`,
+    `SELECT m.candidate_id::int AS "candidateId", m.full_name AS "fullName",
+            m.years_experience::float8 AS "yearsExperience", m.resume_id::int AS "resumeId",
+            m.similarity::float8 AS similarity, m.matched_skills AS "matchedSkills",
+            m.required_skills AS "requiredSkills", m.has_applied AS "hasApplied",
+            COALESCE((SELECT array_agg(s.name ORDER BY s.name)
+                        FROM job_skills js
+                        JOIN skills s ON s.skill_id = js.skill_id
+                        JOIN candidate_skills cs ON cs.skill_id = js.skill_id AND cs.candidate_id = m.candidate_id
+                       WHERE js.job_id = $1 AND js.is_required
+                         AND cs.proficiency >= js.min_proficiency), '{}') AS "matchedSkillNames",
+            a.application_id::int AS "applicationId", a.status AS "applicationStatus"
+       FROM rank_candidates_for_job($1, $2, $3) WITH ORDINALITY AS m
+       LEFT JOIN applications a ON a.job_id = $1 AND a.candidate_id = m.candidate_id
+      ORDER BY m.ordinality`,
     [jobId.data, options.limit, options.applicantsOnly]);
+  const required = await query(
+    `SELECT COALESCE(array_agg(s.name ORDER BY s.name), '{}') AS names
+       FROM job_skills js JOIN skills s ON s.skill_id = js.skill_id
+      WHERE js.job_id = $1 AND js.is_required`, [jobId.data]);
 
   return NextResponse.json({
-    job: { id: jobId.data, title: job.title, embeddingModel: job.model_name, embeddedAt: job.embedded_at },
+    job: { id: jobId.data, title: job.title, embeddingModel: job.model_name, embeddedAt: job.embedded_at,
+           requiredSkills: required.rows[0].names },
     applicantsOnly: options.applicantsOnly,
     limit: options.limit,
     matches: matches.rows,
