@@ -111,13 +111,26 @@ export async function respondToOffer(candidateId, offerId, decision, { pool = ge
       `UPDATE offers AS o SET status = $2, responded_at = now()
         WHERE offer_id = $1 RETURNING ${OFFER_COLUMNS}`, [offerId, status]);
 
-    // The recruiter who posted the job; if that recruiter was removed
-    // (recruiter_id NULL), every recruiter of the company instead.
+    // Tell the recruiter who posted the job AND the one who made the offer
+    // (often the same person). The offer maker is not stored on the offer;
+    // it is changed_by of the '-> offered' row that the history trigger
+    // wrote. If neither is a recruiter of the company any more, every
+    // recruiter of the company is told instead.
     await client.query(
-      `INSERT INTO notifications (user_id, type, title, message, related_application_id)
+      `WITH targets AS (
+         SELECT $2::bigint AS user_id
+         UNION
+         SELECT h.changed_by FROM application_status_history h
+          WHERE h.application_id = $5 AND h.new_status = 'offered'
+       ),
+       known AS (
+         SELECT r.user_id FROM recruiters r JOIN targets t ON t.user_id = r.user_id WHERE r.company_id = $1
+       )
+       INSERT INTO notifications (user_id, type, title, message, related_application_id)
        SELECT r.user_id, 'offer_responded', $3, $4, $5
          FROM recruiters r
-        WHERE r.company_id = $1 AND ($2::bigint IS NULL OR r.user_id = $2)`,
+        WHERE r.company_id = $1
+          AND (r.user_id IN (SELECT user_id FROM known) OR NOT EXISTS (SELECT 1 FROM known))`,
       [row.company_id, row.recruiter_id, `Offer ${status}: ${row.jobTitle}`.slice(0, 150),
         `${row.candidateName} ${status} your offer for ${row.jobTitle}.`, row.applicationId]);
 

@@ -16,10 +16,11 @@ const RUN = Date.now().toString(36);
 const DEMO_PASSWORD = "TalentMatch@2026";
 const MEERA = "meera.iyer@nimbusanalytics.example"; // Nimbus Analytics
 const KAVYA = "kavya.menon@kestrellabs.example";    // Kestrel Software Labs
+const ARJUN = "arjun.rao@nimbusanalytics.example";   // Nimbus Analytics (Meera's colleague)
 const EMAIL_PATTERN = `pipeline.${RUN}.%@test.example`;
 
 let server, api, db;
-let meera, kavya, meeraId, job;
+let meera, kavya, arjun, meeraId, arjunId, job, arjunJob;
 const cand = {}; // tag -> { id, cookie, resumeId, applicationId }
 
 const inHours = (h) => new Date(Date.now() + h * 3600_000).toISOString();
@@ -38,7 +39,7 @@ async function login(email, password = DEMO_PASSWORD) {
 }
 
 // Register, upload a resume, apply to the test job; optionally shortlist.
-async function newApplicant(tag, { shortlist = true } = {}) {
+async function newApplicant(tag, { shortlist = true, jobId = job.id } = {}) {
   const reg = await api("/api/auth/register", { method: "POST", json: {
     fullName: `Pipeline Candidate ${tag}`, email: `pipeline.${RUN}.${tag}@test.example`, password: "Testpass123" } });
   assert.equal(reg.status, 201, reg.text);
@@ -49,7 +50,7 @@ async function newApplicant(tag, { shortlist = true } = {}) {
   const up = await api("/api/candidate/resumes", { method: "POST", body: form, cookie });
   assert.equal(up.status, 201, up.text);
   const applied = await api("/api/candidate/applications", { method: "POST", cookie,
-    json: { jobId: job.id, resumeId: Number(up.body.resume.id) } });
+    json: { jobId, resumeId: Number(up.body.resume.id) } });
   assert.equal(applied.status, 201, applied.text);
   const applicationId = applied.body.application.id;
   if (shortlist) {
@@ -84,6 +85,8 @@ before(async () => {
   api = makeClient(server.baseUrl);
   meera = await login(MEERA);
   kavya = await login(KAVYA);
+  arjun = await login(ARJUN);
+  arjunId = (await db.query("SELECT user_id::int FROM users WHERE email = $1", [ARJUN])).rows[0].user_id;
   const res = await api("/api/recruiter/jobs", { method: "POST", cookie: meera, json: {
     title: `Data Engineer ${RUN}`, location: "Bengaluru", workMode: "hybrid", status: "open",
     description: "Build reliable batch and streaming data pipelines in Python and SQL, model the warehouse and monitor data quality." } });
@@ -102,7 +105,7 @@ after(async () => {
   // notifications about them, then the job.
   await db?.query("DELETE FROM users WHERE email LIKE $1", [EMAIL_PATTERN]);
   await db?.query("DELETE FROM notifications WHERE title LIKE $1", [`%${RUN}%`]);
-  if (job) await db?.query("DELETE FROM jobs WHERE job_id = $1", [job.id]);
+  for (const j of [job, arjunJob]) if (j) await db?.query("DELETE FROM jobs WHERE job_id = $1", [j.id]);
   await db?.end();
   await getPool().end();
   await server?.stop();
@@ -417,6 +420,26 @@ describe("offers: the make-offer transaction", () => {
       assert.equal(accepted.status, 409, accepted.text);
       assert.match(accepted.body.error.message, /already accepted/);
     });
+  });
+});
+
+describe("offer response notifies the job poster and the offer maker", () => {
+  it("Arjun posted the job, Meera made the offer: both are told, nobody else", async () => {
+    const res = await api("/api/recruiter/jobs", { method: "POST", cookie: arjun, json: {
+      title: `Analytics Engineer ${RUN}`, location: "Pune", workMode: "remote", status: "open",
+      description: "Own the analytics layer: dbt-style SQL models, data tests and dashboards that the business trusts every morning." } });
+    assert.equal(res.status, 201, res.text);
+    arjunJob = res.body.job;
+    const c = await newApplicant("colleague", { jobId: arjunJob.id });
+    await api(`/api/recruiter/applications/${c.applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(8) })
+      .then((r) => assert.equal(r.status, 201, r.text));
+    const made = await api(`/api/recruiter/applications/${c.applicationId}/offer`, { method: "POST", cookie: meera, json: offerBody() });
+    assert.equal(made.status, 201, made.text);
+    const accepted = await api(`/api/candidate/offers/${made.body.offer.id}/respond`, { method: "POST", cookie: c.cookie, json: { decision: "accept" } });
+    assert.equal(accepted.status, 200, accepted.text);
+    const { rows } = await db.query(
+      "SELECT user_id::int FROM notifications WHERE related_application_id = $1 AND type = 'offer_responded' ORDER BY user_id", [c.applicationId]);
+    assert.deepEqual(rows.map((r) => r.user_id), [meeraId, arjunId].sort((a, b) => a - b));
   });
 });
 
