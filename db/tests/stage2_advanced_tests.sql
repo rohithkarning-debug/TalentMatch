@@ -320,6 +320,13 @@ BEGIN
     RAISE NOTICE 'PASS T12: ML Engineer % -> %, Frontend % -> %', v_ml0, pg_temp.cnt(v_ml), v_fe0, pg_temp.cnt(v_fe);
 END $$;
 
+ROLLBACK;
+
+-- T13 runs in its own transaction. Since migration 018, the tests above that
+-- move applications to 'interviewed' / 'offered' queue events for the
+-- DEFERRED trigger trg_applications_stage_records, and PostgreSQL refuses to
+-- TRUNCATE a table that still has pending trigger events in the transaction.
+BEGIN;
 \echo '--- T13 TRUNCATE applications resets every applicant_count to 0'
 DO $$
 BEGIN
@@ -327,6 +334,5 @@ BEGIN
     ASSERT NOT EXISTS (SELECT 1 FROM jobs WHERE applicant_count <> 0);
     RAISE NOTICE 'PASS T13: all applicant_count values are 0 after TRUNCATE';
 END $$;
-
 ROLLBACK;
-\echo '=== All Stage 2 tests passed; transaction rolled back (seed data unchanged) ==='
+\echo '=== All Stage 2 tests passed; transactions rolled back (seed data unchanged) ==='

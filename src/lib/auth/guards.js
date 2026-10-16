@@ -37,17 +37,11 @@ export const requireAdmin = (request) => requireRole(request, ROLES.ADMIN);
 export const requireRecruiter = (request) => requireRole(request, ROLES.RECRUITER);
 export const requireCandidate = (request) => requireRole(request, ROLES.CANDIDATE);
 
-// Ownership: the record must belong to the user.
-// Load the owner's user id from the database first (never from the request
-// body), then call one of these.
-export function assertOwner(user, ownerUserId) {
-  if (Number(ownerUserId) !== user.id) throw forbidden("You can only access your own records");
-}
-
-export function assertOwnerOrAdmin(user, ownerUserId) {
-  if (user.role === ROLES.ADMIN) return;
-  assertOwner(user, ownerUserId);
-}
+// Ownership is not checked here. Each query enforces it in SQL
+// (WHERE … AND candidate_id = <session user>), so another user's record
+// simply is not found (404). Company-scoped recruiter records use
+// assertJobInRecruiterCompany / assertApplicationInRecruiterCompany
+// (src/lib/recruiter/jobs.js), which return 403.
 
 // Route-handler wrapper:
 //   export const GET = withAuth({ roles: ["admin"] }, async (request, { user, params }) => { ... });

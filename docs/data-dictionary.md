@@ -179,7 +179,7 @@ Audit trail: one row per status change, written automatically by trigger `trg_ap
 | mode | VARCHAR(10) | NN | `'video'` | CHECK IN (`video`, `phone`, `onsite`) |
 | location_or_link | VARCHAR(500) | | | Meeting link or address. CHECK `interviews_location_required_check` (018): required unless mode = `phone` |
 | interviewer_id | BIGINT | | | **FK** → recruiters ON DELETE SET NULL |
-| status | VARCHAR(12) | NN | `'scheduled'` | CHECK IN (`scheduled`, `completed`, `cancelled`, `no_show`). New rows must be `scheduled`; only `scheduled` rows can change; the other three are final and frozen (`trg_interviews_guard`, 018/019) |
+| status | VARCHAR(12) | NN | `'scheduled'` | CHECK IN (`scheduled`, `completed`, `cancelled`, `no_show`). New rows must be `scheduled`; only `scheduled` rows can change; the other three are final and frozen (`trg_interviews_guard`, 018/019). `completed` / `no_show` only once `scheduled_at` has passed (021) |
 | rating | SMALLINT | | | CHECK 1–5; CHECK only allowed when status = `completed` |
 | feedback | TEXT | | | |
 | created_at | TIMESTAMPTZ | NN | `now()` | |
@@ -197,7 +197,7 @@ Also enforced by `trg_interviews_guard` (018): an interview can only be inserted
 | currency | CHAR(3) | NN | `'INR'` | CHECK three upper-case letters |
 | joining_date | DATE | NN | | Must be after today (India date, `local_today()`) on INSERT (`trg_offers_guard`, 018) |
 | expires_on | DATE | | | CHECK `expires_on ≤ joining_date`. Not in the past on INSERT; an offer can be accepted/declined until the end of this day (`trg_offers_guard`) |
-| status | VARCHAR(10) | NN | `'pending'` | CHECK IN (`pending`, `accepted`, `declined`, `withdrawn`). New rows must be `pending`; only `pending` rows can change; the other three are final and frozen (`trg_offers_guard`, 018/019). Accept/decline also needs the application to be `offered` |
+| status | VARCHAR(10) | NN | `'pending'` | CHECK IN (`pending`, `accepted`, `declined`, `withdrawn`). New rows must be `pending`; only `pending` rows can change; the other three are final and frozen (`trg_offers_guard`, 018/019). Accept/decline also needs the application to be `offered`. Becomes `withdrawn` automatically when its application is rejected while the offer is still pending (`trg_applications_withdraw_offer`, 020). Once `accepted`, its application can no longer be rejected (`trg_applications_accepted_offer_guard`, 022) |
 | offered_at | TIMESTAMPTZ | NN | `now()` | |
 | responded_at | TIMESTAMPTZ | | | CHECK: NULL while pending, set once accepted/declined |
 | updated_at | TIMESTAMPTZ | NN | `now()` | Added in 010; set automatically by trigger `set_updated_at()` |

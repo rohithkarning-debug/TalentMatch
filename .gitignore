@@ -33,3 +33,5 @@ npm-debug.log*
 
 # downloaded embedding model files (npm run db:embed)
 /.cache/
+
+CLAUDE.md
