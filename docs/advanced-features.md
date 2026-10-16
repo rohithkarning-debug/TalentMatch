@@ -1,4 +1,4 @@
-# TalentMatch — Advanced SQL Features (Stages 2, 5, 6 and 7)
+# TalentMatch — Advanced SQL Features (Stages 2 and 5–9)
 
 Migrations: `010_updated_at_triggers.sql`, `011_application_triggers.sql`, `012_functions.sql`, `013_views.sql`.
 Tests: `db/tests/stage2_advanced_tests.sql` · Queries: `db/queries/important_queries.sql` · Transaction demo: `db/demos/transaction_demo.sql`.
@@ -7,7 +7,7 @@ All outputs below are real, captured on 2026-10-09 from PostgreSQL 17.11 running
 
 | Requirement concept (PDF §7) | Where |
 |---|---|
-| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9) |
+| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9); Stage 9: `trg_applications_withdraw_offer` (020) and the completion rule in `trg_interviews_guard` (021; §14). 17 in total |
 | Stored procedures / functions | `generate_hiring_pipeline_report`, `update_application_status`, `is_valid_status_transition` (+ trigger functions); Stage 5: `rank_candidates_for_job`; Stage 6: `compute_match_score` (016) |
 | Views | `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary` |
 | Transactions | Stage 7 **make offer**, accept/decline, withdraw, **schedule interview** (§10, §11; Q27, Q28), Stage 6 **apply to job** (`src/lib/applications.js`, §7), job create/edit/delete, resume upload, `update_application_status` (atomic), seed and migrations, `transaction_demo.sql` |
@@ -299,7 +299,7 @@ Other transactions in the project:
 
 ## 6. Test results (`db/tests/stage2_advanced_tests.sql`)
 
-Everything runs in one transaction that is rolled back. 27 PASS lines, 0 failures. A fingerprint of the applications and jobs tables plus the history and notification counts was identical before and after the run.
+Everything runs in transactions that are rolled back. 27 PASS lines, 0 failures. (Stage 9: T13 now runs in its own transaction. Since migration 018, the earlier tests queue events for the deferred `trg_applications_stage_records`, and PostgreSQL refuses `TRUNCATE` while trigger events are pending. Re-run on 2026-10-16: 27 PASS, see [test-cases.md](test-cases.md).) A fingerprint of the applications and jobs tables plus the history and notification counts was identical before and after the run.
 
 ```
 PASS T1: applicant_count 2 -> 3, history (NULL -> applied) by candidate 9
@@ -407,7 +407,7 @@ The "have" list is the matching JOIN, with `meetsLevel = proficiency >= min_prof
 | `notifications_type_check` | CHECK (dropped and re-added with `ALTER TABLE`) | Adds `interview_updated`, `offer_responded`, `offer_withdrawn` |
 | `interviews_location_required_check` | CHECK (added with `ALTER TABLE`) | Video and onsite interviews need a link or location; phone may leave it empty |
 | `local_today()` | SQL function, `STABLE` | `(now() AT TIME ZONE 'Asia/Kolkata')::date`. The server runs in UTC, but offer dates are Indian calendar dates. Between 00:00 and 05:30 IST, `current_date` would still be "yesterday" |
-| `trg_interviews_guard` | BEFORE INSERT OR UPDATE | INSERT: status `scheduled`, `scheduled_at > now()`, application `shortlisted` or `interviewed`. UPDATE: only a `scheduled` row may change at all (019); a reschedule must be in the future |
+| `trg_interviews_guard` | BEFORE INSERT OR UPDATE | INSERT: status `scheduled`, `scheduled_at > now()`, application `shortlisted` or `interviewed`. UPDATE: only a `scheduled` row may change at all (019); a reschedule must be in the future; `completed` / `no_show` only once `scheduled_at <= now()` (021, §14) |
 | `trg_offers_guard` | BEFORE INSERT OR UPDATE | INSERT: `pending`, joining after today, expiry not past. UPDATE: only a `pending` row may change (019); accept/decline only if `expires_on >= local_today()` and the application is `offered` |
 | `trg_applications_stage_records` | **CONSTRAINT TRIGGER … DEFERRABLE INITIALLY DEFERRED** | At COMMIT: an application that became `interviewed` must have an interview, and one that became `offered` must have a pending offer |
 
@@ -492,9 +492,9 @@ Reschedule, cancel and complete (`updateInterview()`) are one transaction each: 
 **Why derived tables for offers and ratings?** Joining `offers` and `interviews` directly to the applications of a company would multiply rows (applications × interviews), the same double-counting problem the views avoid (§3). Each derived table is grouped by `company_id` first, so it joins at most one row per company.
 
 **Definitions shown on the page** (so the numbers can be defended):
-- *Offer acceptance rate* = accepted ÷ (accepted + declined). Pending and withdrawn offers have no decision, so they are excluded. With the seed data the only offer is still pending, so the column shows "awaiting reply", not a misleading 0%.
-- *Above average* = the company's applications > the average over **all** companies (including those with none): 16 ÷ 3 = 5.33, so only Nimbus (8) is marked.
-- *Average match score by outcome* uses the **current** status. Seed result: interviewed 0.805, offered 0.666, shortlisted 0.655, applied 0.648, rejected 0.570. The rejected group scores lowest, which supports the claim that semantic similarity predicts progress, but the groups have 1–6 applications each, so the page says "indicative only".
+- *Offer acceptance rate* = accepted ÷ (accepted + declined). Pending and withdrawn offers have no decision, so they are excluded. Seed (since Stage 9): Orbitline 1 accepted → **100%**, Kestrel 1 declined → **0%**, Nimbus has only a pending offer → "awaiting reply" instead of a misleading 0%.
+- *Above average* = the company's applications > the average over **all** companies (including those with none): 18 ÷ 3 = 6, so only Nimbus (8) is marked (Kestrel has exactly 6, which is not above).
+- *Average match score by outcome* uses the **current** status. Seed result (Stage 9): interviewed 0.8053, shortlisted 0.6546, applied 0.648, rejected 0.5814, offered 0.5408. Before Stage 9 the rejected group scored lowest, but adding the two finished hiring stories (Neha's DevOps resume against the SRE job, Aman's MERN resume against the Node.js job) moved `offered` below `rejected`. With 2–6 applications per group the order is not stable, so it is **not** evidence that similarity predicts progress; the page rightly says "indicative only".
 
 **Verification.** `tests/integration/admin.test.js` recomputes every number from the **base tables** with independent SQL (no views, no function) and compares it with the API response: totals, all 5 stages, each top skill's counts, all 5 score averages (to 4 decimals), every company's 9 columns plus the above-average flag, and the stage counts of every job.
 
@@ -515,3 +515,26 @@ The role is a constant in the SQL; the strict zod schema rejects a `role` field 
 **Deleting a company.** The app sends `DELETE FROM companies WHERE company_id = $1` with **no pre-check**. `recruiters_company_fkey` and `jobs_company_fkey` are `ON DELETE RESTRICT`, so PostgreSQL itself refuses (error `23503`). Only then does the app count the recruiters and jobs to build the message *"Nimbus Analytics Pvt Ltd cannot be deleted because it still has 2 recruiters and 3 jobs."* (409 `COMPANY_IN_USE`, with the constraint name). A pre-check in the app could race with a recruiter being added at the same moment; the FK cannot.
 
 **Moving a recruiter to another company** is blocked by the database while they own jobs. `jobs (recruiter_id, company_id)` is a composite FK to `recruiters (user_id, company_id)` with no ON UPDATE action, so changing `recruiters.company_id` would leave the jobs pointing at a (recruiter, company) pair that no longer exists. PostgreSQL refuses (`jobs_recruiter_fkey`), and the API returns 409 `RECRUITER_OWNS_JOBS`. A recruiter with no jobs can be moved.
+
+## 14. Stage 9: consistency fixes (migrations 020, 021)
+
+Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for the API, `update_application_status()` from psql, and plain SQL alike.
+
+| Object | Kind | Rule |
+|---|---|---|
+| `trg_applications_withdraw_offer` → `withdraw_pending_offer_on_reject()` | AFTER UPDATE OF status ON applications, `WHEN (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected')` | The application's **pending** offer becomes `withdrawn` and the candidate gets one `offer_withdrawn` notification, in the same transaction as the reject. Accepted / declined offers are left alone (they record the candidate's decision) |
+| `trg_interviews_guard` (function replaced in 021) | BEFORE UPDATE (new rule) | `completed` or `no_show` only when `scheduled_at <= now()`; the time cannot be changed in the same UPDATE that records the outcome |
+
+**Why a trigger and not code in the API route?** Rejecting can happen through the status dropdown (PATCH route), `update_application_status()` called from psql, or a direct `UPDATE`. A rule in one route would miss the other two. The trigger runs inside the transaction of whatever changed the status: if the reject rolls back, the withdrawal rolls back too (integration test "update_application_status() from SQL does the same; a ROLLBACK undoes both").
+
+**Why AFTER and not BEFORE?** The offer should only be withdrawn if the status change really happened. AFTER row triggers only see rows that passed every BEFORE check (including the transition guard) and were actually written.
+
+**No double notification with `withdrawOffer()`.** The recruiter's Withdraw button (`src/lib/offers.js`) first sets the offer to `withdrawn` and then rejects the application. When the trigger fires, nothing is pending any more, so it does nothing and the candidate still gets exactly one `offer_withdrawn`.
+
+**Why also `no_show`?** Both `completed` and `no_show` describe what happened at the interview time, so neither can be true before it. `cancelled` stays allowed at any time. The second rule (no reschedule + complete in one statement) closes the loophole `UPDATE … SET scheduled_at = now() - interval '1 hour', status = 'completed'`, which would otherwise pass because the time check would see the new, past time.
+
+**Why not a CHECK constraint?** Same reason as 018: `scheduled_at <= now()` changes its answer over time, so it can only be checked at the moment of the change.
+
+**Evidence.** Negative controls on 2026-10-16: with `trg_applications_withdraw_offer` dropped, the two reject tests failed (29 pass / 2 fail). With the 019 version of `guard_interview_change()` restored, the two completion tests failed (30 pass / 2 fail). With the migrations in place, all 32 pipeline tests pass. After a fresh reset and seed, these SQL checks all return 0: pending offers on rejected applications, completed / no_show interviews in the future, offered applications without an offer.
+
+**Demo data.** The seed now has one **accepted** offer (Neha Bhatt, Site Reliability Engineer, Orbitline) and one **declined** offer (Aman Malhotra, Backend Engineer, Kestrel; the recruiter then rejected the application, which leaves the declined offer unchanged). There is no `hired` status, so an accepted offer leaves the application at `offered`, exactly as the accept transaction does in the app.
