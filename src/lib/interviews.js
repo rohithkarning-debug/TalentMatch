@@ -1,6 +1,7 @@
 import { notFound, forbidden } from "./api/api-error.js";
 import { rethrowBusinessRule } from "./api/db-rules.js";
 import { getPool } from "./db.js";
+import { formatDateTime } from "./format-date.js";
 import { assertApplicationInRecruiterCompany } from "./recruiter/jobs.js";
 
 // Interview actions of a recruiter. Each one is a single transaction.
@@ -8,10 +9,9 @@ import { assertApplicationInRecruiterCompany } from "./recruiter/jobs.js";
 // video/onsite) live in the database: trg_interviews_guard and the CHECK
 // constraints. Their errors become 409 / 400 responses.
 
-// Notification texts show Indian time, whatever the server's time zone is.
-export const formatIndianDateTime = (value) => new Date(value).toLocaleString("en-IN", {
-  timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short",
-}) + " IST";
+// Notification texts show Indian time, whatever the server's time zone is,
+// in the same format as the UI: "23 Oct 2026, 11:00 am IST".
+export const formatIndianDateTime = (value) => `${formatDateTime(value)} IST`;
 
 const INTERVIEW_COLUMNS = `
   i.interview_id::int AS id, i.application_id::int AS "applicationId", i.round_no AS "roundNo",

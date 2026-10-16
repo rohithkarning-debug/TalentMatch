@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, EmptyState, formatSalary, inputClass, labelClass, linkClass, PageHeader, PageShell, secondaryClass, SkeletonList, StatusBadge, Tag,
+  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, EmptyState, formatDate, formatSalary, inputClass, labelClass, linkClass, PageHeader, PageShell, secondaryClass, SkeletonList, StatusBadge, Tag,
 } from "@/components/ui";
 
 const EMPTY_FILTERS = { q: "", location: "", employmentType: "", experience: "" };
@@ -62,7 +62,7 @@ export default function JobBrowser() {
               </div>
               {job.hasApplied && <StatusBadge status="applied" />}
             </div>
-            <p className="mt-2 text-sm text-slate-700">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years experience · {formatSalary(job)}{job.closesAt && ` · closes ${new Date(job.closesAt).toLocaleDateString()}`}</p>
+            <p className="mt-2 text-sm text-slate-700">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years experience · {formatSalary(job)}{job.closesAt && ` · closes ${formatDate(job.closesAt)}`}</p>
             <p className="mt-3 line-clamp-3 text-sm text-slate-600">{job.description}</p>
             {job.skills.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{job.skills.map((s) => <Tag key={s}>{s}</Tag>)}</div>}
             <Link href={`/candidate/jobs/${job.id}`} className={`${linkClass} mt-3 inline-block text-sm`}>{job.hasApplied ? "View application" : "View skill gap and apply"} →</Link>

@@ -347,6 +347,10 @@ describe("offers: the make-offer transaction", () => {
       "SELECT old_status, new_status, changed_by::int, note FROM application_status_history WHERE application_id = $1 ORDER BY history_id DESC LIMIT 1", [applicationId]);
     assert.deepEqual(h, { old_status: "interviewed", new_status: "offered", changed_by: meeraId, note: "Offer made" });
     assert.deepEqual((await notificationTypes(candidateId, applicationId)).slice(-2), ["status_changed", "offer_made"]);
+    // Stage 10: notification dates use the UI's format ("16 Nov 2026"), not ISO dates.
+    const { rows: [n] } = await db.query(
+      "SELECT message FROM notifications WHERE user_id = $1 AND related_application_id = $2 AND type = 'offer_made'", [candidateId, applicationId]);
+    assert.match(n.message, /joining on \d{1,2} [A-Z][a-z]{2} \d{4}\. Please respond by \d{1,2} [A-Z][a-z]{2} \d{4}\.$/);
   });
 
   it("forced rollback: a second offer (UNIQUE violation) is 409 and changes nothing", async () => {
@@ -462,7 +466,7 @@ describe("offers: the make-offer transaction", () => {
       const notificationsBefore = (await snapshot(applicationId)).notifications;
       const res = await api(`/api/candidate/offers/${id}/respond`, { method: "POST", cookie, json: { decision: "accept" } });
       assert.equal(res.status, 409, res.text);
-      assert.match(res.body.error.message, /expired on/);
+      assert.match(res.body.error.message, /expired on \d{1,2} [A-Z][a-z]{2} \d{4};/);
       const { rows: [o] } = await db.query("SELECT status, responded_at FROM offers WHERE offer_id = $1", [id]);
       assert.deepEqual(o, { status: "pending", responded_at: null });
       assert.equal((await snapshot(applicationId)).notifications, notificationsBefore);
