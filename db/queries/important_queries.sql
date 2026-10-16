@@ -1,6 +1,7 @@
 -- ============================================================================
 -- TalentMatch — Important SQL queries
--- Read-only queries against the seeded schema. Each one is preceded by:
+-- Queries against the seeded schema; they leave the data unchanged (Q23
+-- writes inside a transaction that it rolls back). Each one is preceded by:
 --   DEMONSTRATES: the SQL concept(s)   RETURNS: what you get back
 --   WHY: how TalentMatch uses it
 --
@@ -327,3 +328,106 @@ CROSS JOIN (SELECT re.embedding AS v
              WHERE u.email = 'aditi.sharma@mail.example') AS q
 ORDER BY je.embedding <=> q.v
 LIMIT 3;
+
+\echo '\n=== Q23 Apply-to-job transaction (same steps as src/lib/applications.js) ==='
+-- DEMONSTRATES: explicit transaction BEGIN ... COMMIT/ROLLBACK, row lock
+--               SELECT ... FOR SHARE, INSERT ... SELECT ... RETURNING, a
+--               stored function inside INSERT (compute_match_score), and three
+--               triggers firing INSIDE the transaction (initial-status guard,
+--               applicant_count, status history).
+-- RETURNS: the new application with its real cosine match score, the
+--          trigger-updated applicant_count and history row as seen INSIDE the
+--          transaction, then the count after ROLLBACK (back to the original).
+-- WHY: POST /api/candidate/applications. The app ends with COMMIT; this file
+--      ends with ROLLBACK so it stays read-only and can be re-run.
+BEGIN;
+SELECT job_id, title, status, applicant_count AS count_before
+  FROM jobs WHERE title = 'Data Analyst'
+   FOR SHARE;                                  -- nobody can close it until we finish
+INSERT INTO applications (job_id, candidate_id, resume_id, match_score)
+SELECT j.job_id, u.user_id, r.resume_id, compute_match_score(r.resume_id, j.job_id)
+  FROM jobs j
+ CROSS JOIN users u
+  JOIN resumes r ON r.candidate_id = u.user_id AND r.is_primary
+ WHERE j.title = 'Data Analyst' AND j.status = 'open'
+   AND u.email = 'ananya.gupta@mail.example'
+RETURNING application_id, status, match_score;
+INSERT INTO notifications (user_id, type, title, message, related_application_id)
+SELECT j.recruiter_id, 'application_submitted', 'New application: ' || j.title,
+       u.full_name || ' applied for ' || j.title || '.', a.application_id
+  FROM applications a
+  JOIN jobs j  ON j.job_id = a.job_id
+  JOIN users u ON u.user_id = a.candidate_id
+ WHERE j.title = 'Data Analyst' AND u.email = 'ananya.gupta@mail.example';
+SELECT j.applicant_count AS count_inside_txn, h.old_status, h.new_status, h.note
+  FROM jobs j
+  JOIN applications a ON a.job_id = j.job_id
+  JOIN users u        ON u.user_id = a.candidate_id AND u.email = 'ananya.gupta@mail.example'
+  JOIN application_status_history h ON h.application_id = a.application_id
+ WHERE j.title = 'Data Analyst';
+ROLLBACK;                                      -- the app runs COMMIT here
+SELECT applicant_count AS count_after_rollback FROM jobs WHERE title = 'Data Analyst';
+
+\echo '\n=== Q24 Skill gap: required skills a candidate has vs is missing (EXCEPT) ==='
+-- DEMONSTRATES: set difference with EXCEPT, JOIN with a comparison column
+--               (proficiency >= min_proficiency).
+-- RETURNS: for Aman and the ML Engineer job, each required skill labelled
+--          have / below level / missing. "missing" comes from
+--          job_skills EXCEPT candidate_skills.
+-- WHY: the "Skill gap" panel on the candidate job page
+--      (src/lib/candidate/skill-gap.js runs the same two queries).
+WITH params AS (
+    SELECT (SELECT job_id  FROM jobs  WHERE title = 'Machine Learning Engineer') AS job_id,
+           (SELECT user_id FROM users WHERE email = 'aman.malhotra@mail.example') AS candidate_id
+)
+SELECT s.name AS skill, js.min_proficiency AS needed, cs.proficiency AS has,
+       CASE WHEN cs.proficiency >= js.min_proficiency THEN 'have' ELSE 'have (below level)' END AS gap
+  FROM params p
+  JOIN job_skills js       ON js.job_id = p.job_id AND js.is_required
+  JOIN skills s            ON s.skill_id = js.skill_id
+  JOIN candidate_skills cs ON cs.skill_id = js.skill_id AND cs.candidate_id = p.candidate_id
+UNION ALL
+SELECT s.name, js.min_proficiency, NULL, 'missing'
+  FROM params p
+  JOIN (SELECT js.skill_id FROM job_skills js, params p
+         WHERE js.job_id = p.job_id AND js.is_required
+        EXCEPT
+        SELECT cs.skill_id FROM candidate_skills cs, params p
+         WHERE cs.candidate_id = p.candidate_id) AS gap ON TRUE
+  JOIN skills s      ON s.skill_id = gap.skill_id
+  JOIN job_skills js ON js.job_id = p.job_id AND js.skill_id = gap.skill_id
+ORDER BY gap, skill;
+
+\echo '\n=== Q25 match_score is a real cosine similarity (compute_match_score check) ==='
+-- DEMONSTRATES: calling a SQL function per row, pgvector <=>, aggregate check.
+-- RETURNS: how many applications are scored, and the largest difference
+--          between the stored score and 1 - (resume <=> job) recomputed now
+--          (≤ 0.00005, the 4-decimal rounding).
+-- WHY: proves no score is faked (rule: scores must come from pgvector).
+SELECT count(*)                                        AS applications,
+       count(a.match_score)                            AS scored,
+       max(abs(a.match_score - (1 - (re.embedding <=> je.embedding))))::numeric(10,8) AS max_difference,
+       bool_and(a.match_score = compute_match_score(a.resume_id, a.job_id)) AS all_equal_function
+  FROM applications a
+  LEFT JOIN resume_embeddings re ON re.resume_id = a.resume_id
+  LEFT JOIN job_embeddings je    ON je.job_id = a.job_id;
+
+\echo '\n=== Q26 Recruiter applicant ranking for one job ==='
+-- DEMONSTRATES: ORDER BY ... DESC NULLS LAST, correlated array_agg
+--               subqueries, LEFT JOIN.
+-- RETURNS: applicants of the ML Engineer job, best match score first, with
+--          matched / required skill names side by side.
+-- WHY: the "Ranked applicants" tab (GET /api/recruiter/jobs/:id/applications).
+SELECT u.full_name, a.status, a.match_score,
+       (SELECT string_agg(s.name, ', ' ORDER BY s.name)
+          FROM job_skills js
+          JOIN skills s ON s.skill_id = js.skill_id
+          JOIN candidate_skills cs ON cs.skill_id = js.skill_id AND cs.candidate_id = a.candidate_id
+         WHERE js.job_id = a.job_id AND js.is_required AND cs.proficiency >= js.min_proficiency) AS matched,
+       (SELECT string_agg(s.name, ', ' ORDER BY s.name)
+          FROM job_skills js JOIN skills s ON s.skill_id = js.skill_id
+         WHERE js.job_id = a.job_id AND js.is_required) AS required
+  FROM applications a
+  JOIN users u ON u.user_id = a.candidate_id
+ WHERE a.job_id = (SELECT job_id FROM jobs WHERE title = 'Machine Learning Engineer')
+ ORDER BY a.match_score DESC NULLS LAST, a.applied_at;
