@@ -19,7 +19,9 @@ export const EMPLOYMENT_TYPES = ["full_time", "part_time", "contract", "internsh
 export const MAX_JOB_SKILLS = 30;
 
 const oneDecimal = (v) => Number.isInteger(Math.round(v * 1000) / 100);
-const salary = z.union([z.coerce.number().min(0, "Salary cannot be negative").max(9_999_999_999.99), z.null()]);
+// z.null() must come first: z.coerce.number() would turn null into 0
+// (Number(null) === 0) and "no salary given" would be stored as ₹0.
+const salary = z.union([z.null(), z.coerce.number().min(0, "Salary cannot be negative").max(9_999_999_999.99)]);
 
 const jobSkillSchema = z.strictObject({
   skillId: z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER),
