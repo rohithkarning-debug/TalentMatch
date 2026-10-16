@@ -4,22 +4,10 @@ import { z } from "zod";
 // Every API error response has the same shape:
 //   { "error": { "code": "SOME_CODE", "message": "Human readable", "details"?: {...} } }
 
-export class ApiError extends Error {
-  constructor(status, code, message, details) {
-    super(message);
-    this.status = status;
-    this.code = code;
-    this.details = details;
-  }
-}
-
-export const unauthorized = (message = "Authentication required") =>
-  new ApiError(401, "UNAUTHORIZED", message);
-export const forbidden = (message = "You do not have permission to do this") =>
-  new ApiError(403, "FORBIDDEN", message);
-export const notFound = (message = "Not found") => new ApiError(404, "NOT_FOUND", message);
-export const badRequest = (message, details) =>
-  new ApiError(400, "VALIDATION_ERROR", message, details);
+// ApiError and the helpers live in api-error.js (no framework imports, so
+// library code tested under plain Node can use them); re-exported here.
+import { ApiError } from "./api-error.js";
+export { ApiError, badRequest, forbidden, notFound, unauthorized } from "./api-error.js";
 
 export function jsonError(status, code, message, details) {
   const body = { error: { code, message } };
