@@ -271,7 +271,16 @@ FROM (VALUES
     ('Backend Engineer (Node.js)', 'karthik.subramanian@mail.example',      'rejected',    '2026-09-04 08:30+05:30', '2026-09-11 14:00+05:30', NULL),
     ('DevOps Engineer', 'neha.bhatt@mail.example',                          'interviewed', '2026-08-19 10:30+05:30', '2026-09-10 18:00+05:30', 'I manage EKS clusters with Terraform and Argo CD today.'),
     ('DevOps Engineer', 'siddharth.pillai@mail.example',                    'applied',     '2026-08-27 23:00+05:30', '2026-08-27 23:00+05:30', NULL),
-    ('Site Reliability Engineer', 'siddharth.pillai@mail.example',          'rejected',    '2026-07-28 21:00+05:30', '2026-08-10 12:00+05:30', NULL)
+    ('Site Reliability Engineer', 'siddharth.pillai@mail.example',          'rejected',    '2026-07-28 21:00+05:30', '2026-08-10 12:00+05:30', NULL),
+    -- Two finished hiring stories (Stage 9), so the dashboard's offer
+    -- acceptance rate has real accepted AND declined offers to count:
+    --   Neha accepted the SRE offer (the job was closed once it was filled);
+    --   Aman declined the Backend offer, then the recruiter rejected the
+    --   application to close it out. There is no 'hired' status: an
+    --   accepted offer leaves the application at 'offered', exactly as
+    --   the accept transaction in the app does.
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example',                'offered',     '2026-07-30 10:00+05:30', '2026-08-18 12:00+05:30', 'I run Kubernetes in production and own our on-call rotation.'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example',            'rejected',    '2026-09-06 20:00+05:30', '2026-10-06 10:00+05:30', 'I build Express APIs on Node.js every day and want to go deeper on PostgreSQL.')
 ) AS v(title, email, status, applied_at, updated_at, cover_letter)
 JOIN jobs j    ON j.title = v.title
 JOIN users u   ON u.email = v.email
@@ -317,7 +326,16 @@ FROM (VALUES
     ('DevOps Engineer', 'neha.bhatt@mail.example',       'shortlisted', 'interviewed', 'Round 1 completed', '2026-09-10 18:00+05:30'),
     ('DevOps Engineer', 'siddharth.pillai@mail.example', NULL, 'applied', 'Application submitted', '2026-08-27 23:00+05:30'),
     ('Site Reliability Engineer', 'siddharth.pillai@mail.example', NULL, 'applied', 'Application submitted', '2026-07-28 21:00+05:30'),
-    ('Site Reliability Engineer', 'siddharth.pillai@mail.example', 'applied', 'rejected', 'Needs more SRE experience', '2026-08-10 12:00+05:30')
+    ('Site Reliability Engineer', 'siddharth.pillai@mail.example', 'applied', 'rejected', 'Needs more SRE experience', '2026-08-10 12:00+05:30'),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', NULL, 'applied', 'Application submitted', '2026-07-30 10:00+05:30'),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'applied', 'shortlisted', 'Strong Kubernetes and on-call background', '2026-08-04 11:00+05:30'),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'shortlisted', 'interviewed', 'Round 1 completed', '2026-08-11 16:30+05:30'),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 'interviewed', 'offered', 'Offer approved by engineering head', '2026-08-18 12:00+05:30'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', NULL, 'applied', 'Application submitted', '2026-09-06 20:00+05:30'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'applied', 'shortlisted', 'Solid Express and REST API projects', '2026-09-12 10:00+05:30'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'shortlisted', 'interviewed', 'Technical round completed', '2026-09-19 15:30+05:30'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'interviewed', 'offered', 'Offer approved', '2026-09-29 11:00+05:30'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 'offered', 'rejected', 'Candidate declined the offer', '2026-10-06 10:00+05:30')
 ) AS v(title, email, old_status, new_status, note, changed_at)
 JOIN jobs j         ON j.title = v.title
 JOIN users u        ON u.email = v.email
@@ -346,7 +364,11 @@ FROM (VALUES
     ('Frontend Developer (React / Next.js)', 'sneha.kulkarni@mail.example', 2, '2026-10-13 15:00+05:30', 60, 'video',
      'https://meet.kestrellabs.example/fe-r2-sneha', 'scheduled', NULL, NULL),
     ('DevOps Engineer', 'neha.bhatt@mail.example', 1, '2026-09-10 17:00+05:30', 60, 'phone',
-     NULL, 'completed', 4, 'Deep Kubernetes experience; asked good questions about our on-call process.')
+     NULL, 'completed', 4, 'Deep Kubernetes experience; asked good questions about our on-call process.'),
+    ('Site Reliability Engineer', 'neha.bhatt@mail.example', 1, '2026-08-11 15:00+05:30', 60, 'video',
+     'https://meet.orbitline.example/sre-r1-neha', 'completed', 5, 'Excellent incident-response examples; strong Prometheus and Kubernetes depth.'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 1, '2026-09-19 14:00+05:30', 60, 'video',
+     'https://meet.kestrellabs.example/be-r1-aman', 'completed', 4, 'Clean API design and good SQL; less experience tuning PostgreSQL.')
 ) AS v(title, email, round_no, scheduled_at, duration, mode, link, status, rating, feedback)
 JOIN jobs j         ON j.title = v.title
 JOIN users u        ON u.email = v.email
@@ -354,13 +376,22 @@ JOIN applications a ON a.job_id = j.job_id AND a.candidate_id = u.user_id
 ON CONFLICT (application_id, round_no) DO NOTHING;
 
 -- --------------------------------------------------------------- offers ----
-INSERT INTO offers (application_id, salary_offered, joining_date, expires_on, status, offered_at)
-SELECT a.application_id, 2600000, DATE '2026-11-16', DATE '2026-10-20', 'pending',
-       TIMESTAMPTZ '2026-10-01 11:00+05:30'
-FROM applications a
-JOIN jobs j  ON j.job_id = a.job_id
-JOIN users u ON u.user_id = a.candidate_id
-WHERE j.title = 'Machine Learning Engineer' AND u.email = 'rohan.verma@mail.example'
+-- One pending, one accepted, one declined. A responded offer must have
+-- responded_at (offers_response_consistency_check).
+INSERT INTO offers (application_id, salary_offered, joining_date, expires_on, status, offered_at, responded_at)
+SELECT a.application_id, v.salary, v.joining_date::date, v.expires_on::date, v.status,
+       v.offered_at::timestamptz, v.responded_at::timestamptz
+FROM (VALUES
+    ('Machine Learning Engineer',  'rohan.verma@mail.example',   2600000, '2026-11-16', '2026-10-20', 'pending',
+     '2026-10-01 11:00+05:30', NULL),
+    ('Site Reliability Engineer',  'neha.bhatt@mail.example',    2900000, '2026-09-21', '2026-08-25', 'accepted',
+     '2026-08-18 12:00+05:30', '2026-08-21 10:30+05:30'),
+    ('Backend Engineer (Node.js)', 'aman.malhotra@mail.example', 1500000, '2026-11-02', '2026-10-08', 'declined',
+     '2026-09-29 11:00+05:30', '2026-10-05 18:00+05:30')
+) AS v(title, email, salary, joining_date, expires_on, status, offered_at, responded_at)
+JOIN jobs j         ON j.title = v.title
+JOIN users u        ON u.email = v.email
+JOIN applications a ON a.job_id = j.job_id AND a.candidate_id = u.user_id
 ON CONFLICT (application_id) DO NOTHING;
 
 -- -------------------------------------------------------- notifications ----
@@ -378,7 +409,15 @@ FROM (VALUES
     ('kavya.menon@kestrellabs.example', 'vikram.chauhan@mail.example', 'Frontend Developer (React / Next.js)', 'application_submitted',
      'New application received', 'Vikram Chauhan applied for Frontend Developer (React / Next.js).', FALSE, '2026-09-10 09:15+05:30'),
     ('rahul.kamath@orbitline.example', 'siddharth.pillai@mail.example', 'DevOps Engineer', 'application_submitted',
-     'New application received', 'Siddharth Pillai applied for DevOps Engineer.', TRUE, '2026-08-27 23:00+05:30')
+     'New application received', 'Siddharth Pillai applied for DevOps Engineer.', TRUE, '2026-08-27 23:00+05:30'),
+    ('neha.bhatt@mail.example', 'neha.bhatt@mail.example', 'Site Reliability Engineer', 'offer_made',
+     'You have received an offer', 'Orbitline Cloud Systems has sent you an offer for Site Reliability Engineer.', TRUE, '2026-08-18 12:00+05:30'),
+    ('rahul.kamath@orbitline.example', 'neha.bhatt@mail.example', 'Site Reliability Engineer', 'offer_responded',
+     'Offer accepted: Site Reliability Engineer', 'Neha Bhatt accepted your offer for Site Reliability Engineer.', TRUE, '2026-08-21 10:30+05:30'),
+    ('aman.malhotra@mail.example', 'aman.malhotra@mail.example', 'Backend Engineer (Node.js)', 'offer_made',
+     'You have received an offer', 'Kestrel Software Labs has sent you an offer for Backend Engineer (Node.js).', TRUE, '2026-09-29 11:00+05:30'),
+    ('kavya.menon@kestrellabs.example', 'aman.malhotra@mail.example', 'Backend Engineer (Node.js)', 'offer_responded',
+     'Offer declined: Backend Engineer (Node.js)', 'Aman Malhotra declined your offer for Backend Engineer (Node.js).', FALSE, '2026-10-05 18:00+05:30')
 ) AS v(recipient_email, candidate_email, title_of_job, type, title, message, is_read, created_at)
 JOIN users v_user   ON v_user.email = v.recipient_email
 JOIN users cand     ON cand.email   = v.candidate_email
