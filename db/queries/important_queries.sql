@@ -285,3 +285,45 @@ WHERE j.status = 'open'
 GROUP BY u.user_id, u.full_name, j.job_id, j.title
 HAVING count(cs.skill_id)::numeric / count(*) >= 0.6
 ORDER BY j.title, coverage_pct DESC, u.full_name;
+
+\echo '\n=== Q20 Semantic ranking: top candidates for the ML Engineer job (pgvector) ==='
+-- DEMONSTRATES: calling a set-returning PL/pgSQL function (migration 015) that
+--               does a vector similarity search with the cosine distance
+--               operator <=>, joined with relational data (users, candidates,
+--               job_skills, candidate_skills, applications).
+-- RETURNS: candidates ranked by similarity = 1 - (primary resume embedding
+--          <=> job embedding), with experience, required-skill matches and
+--          whether they applied.
+-- WHY: the recruiter "Best matches" list (GET /api/recruiter/jobs/:id/matches).
+--      Needs embeddings: run `npm run db:embed` after seeding.
+SELECT full_name, years_experience, similarity, matched_skills, required_skills, has_applied
+FROM rank_candidates_for_job(
+         (SELECT job_id FROM jobs WHERE title = 'Machine Learning Engineer'), 5, FALSE);
+
+\echo '\n=== Q21 Same ranking restricted to the job''s applicants ==='
+-- DEMONSTRATES: the p_applicants_only flag (EXISTS filter inside the function).
+-- RETURNS: only candidates who applied to the job, best semantic match first.
+-- WHY: screening the applicant pool instead of sourcing new people.
+SELECT full_name, similarity, matched_skills || '/' || required_skills AS skills, has_applied
+FROM rank_candidates_for_job(
+         (SELECT job_id FROM jobs WHERE title = 'Machine Learning Engineer'), 10, TRUE);
+
+\echo '\n=== Q22 Reverse direction: best open jobs for one candidate (raw k-NN query) ==='
+-- DEMONSTRATES: the k-nearest-neighbour pattern ORDER BY embedding <=> vector
+--               LIMIT k written out by hand (the shape the HNSW index with
+--               vector_cosine_ops serves), scalar subquery for the query
+--               vector, JOIN to filter by a relational column (status = 'open').
+-- RETURNS: the 3 open jobs whose embeddings are closest to Aditi's primary resume.
+-- WHY: "Recommended jobs" for a candidate.
+SELECT j.title, c.name AS company,
+       round((1 - (je.embedding <=> q.v))::numeric, 4) AS similarity
+FROM job_embeddings je
+JOIN jobs j      ON j.job_id = je.job_id AND j.status = 'open'
+JOIN companies c ON c.company_id = j.company_id
+CROSS JOIN (SELECT re.embedding AS v
+              FROM resume_embeddings re
+              JOIN resumes r ON r.resume_id = re.resume_id AND r.is_primary
+              JOIN users u   ON u.user_id = r.candidate_id
+             WHERE u.email = 'aditi.sharma@mail.example') AS q
+ORDER BY je.embedding <=> q.v
+LIMIT 3;

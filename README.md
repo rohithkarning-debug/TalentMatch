@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 4 (candidate module: profile, skills, PDF/TXT resume upload with a primary resume, and browsing/filtering open jobs) is done. Applying to jobs, the recruiter module and vector matching come next.
+> Status: Stage 5 (semantic matching: local MiniLM embeddings for resumes and jobs, pgvector cosine ranking in `rank_candidates_for_job()`, and the recruiter matches API) is done. Applying to jobs and the recruiter module (job posting, pipeline UI) come next.
 
 ## Prerequisites
 
@@ -32,7 +32,11 @@ docker compose --env-file .env.local up -d --wait
 npm run db:migrate
 npm run db:seed
 
-# 5. Start the app
+# 5. Create embeddings for the seeded resumes and jobs (first run downloads
+#    the ~90 MB MiniLM model into .cache/transformers; needs internet once)
+npm run db:embed
+
+# 6. Start the app
 npm run dev
 ```
 
@@ -53,10 +57,18 @@ Login uses an httpOnly session cookie that holds a signed JWT. Every API route c
 ## Tests
 
 ```powershell
-npm run test:unit          # auth unit tests (no server/DB needed)
+npm run test:unit          # unit tests (no server/DB needed; embedding tests use the cached model)
 npm run build              # integration tests use the production build
-npm run test:integration   # starts the app on port 3100 and tests the real API + DB
+npm run test:integration   # starts the app (ports 3100-3102) and tests the real API + DB + model
 ```
+
+## Semantic matching
+
+Resumes and jobs are embedded locally with `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions) and stored in pgvector columns. `rank_candidates_for_job(job_id, limit, applicants_only)` ranks candidates by cosine similarity `1 - (resume <=> job)`. Details: [docs/vector-design.md](docs/vector-design.md).
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/recruiter/jobs/:jobId/matches?applicantsOnly=true\|false&limit=N` | Ranked candidates for a job of the recruiter's own company (200 / 400 / 401 / 403 / 404) |
 
 ## Database scripts
 
@@ -64,6 +76,7 @@ npm run test:integration   # starts the app on port 3100 and tests the real API 
 |---|---|
 | `npm run db:migrate` | Applies new files in `db/migrations/` in order. Already-applied files are skipped (tracked in `tm_meta.schema_migrations`). |
 | `npm run db:seed` | Loads fictional demo data from `db/seed/seed.sql`. Safe to run more than once. |
+| `npm run db:embed` | Embeds every resume and job that has no embedding yet (or whose text or model changed). Safe to run more than once. |
 | `npm run db:reset` | **Destructive.** Drops all TalentMatch tables and data. It only works on the local Docker dev database and asks you to type the database name. Add `-- --yes` to skip the prompt. |
 
 SQL scripts (PowerShell, from the project root):
@@ -105,6 +118,7 @@ All demo accounts use the password **`TalentMatch@2026`**. Only its bcrypt hash 
 - [Relational schema](docs/relational-schema.md), including why PostgreSQL + pgvector share one database
 - [Data dictionary](docs/data-dictionary.md)
 - [Advanced SQL features](docs/advanced-features.md): triggers, functions, views, queries, transactions
+- [Vector design](docs/vector-design.md): embeddings, chunking, HNSW, cosine ranking
 - [Authentication and RBAC](docs/authentication.md)
 - [Test cases and results](docs/test-cases.md)
 

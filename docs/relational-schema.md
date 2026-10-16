@@ -17,7 +17,7 @@ TalentMatch handles two kinds of data:
 
 1. **One query can mix both.** Ranking candidates is a SQL JOIN plus a vector similarity sort (`ORDER BY embedding <=> $1`) filtered by normal columns such as job status or company. With a separate vector DB, the app would have to fetch IDs from one system and look them up in the other.
 2. **Referential integrity for vectors.** Embeddings have real foreign keys with `ON DELETE CASCADE`. Deleting a resume deletes its vector, and a vector can never point at a missing resume.
-3. **Transactions.** Saving a resume and its embedding can be one atomic transaction.
+3. **Transactions and consistency.** Embeddings are ordinary rows, so upserts, cascading deletes and the ranking query all see one consistent database. (We deliberately commit the resume upload *before* embedding it, so a model failure can't lose the upload; see [vector-design.md §5](vector-design.md#failure-handling-on-upload).)
 4. **Simpler to run.** One Docker container, one backup, one set of credentials.
 5. **Scale fits.** A single-organisation recruitment system has thousands of resumes, not billions. pgvector's HNSW index is more than enough.
 
