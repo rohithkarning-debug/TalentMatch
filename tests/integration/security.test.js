@@ -34,6 +34,16 @@ describe("security headers (next.config.mjs)", () => {
   }
 });
 
+describe("GET /api/health (public)", () => {
+  it("reports only version numbers, not the OS / compiler build string", async () => {
+    const res = await fetch(`${server.baseUrl}/api/health`);
+    const body = await res.json();
+    assert.equal(res.status, 200);
+    assert.match(body.database.version, /^\d+(\.\d+)*/);
+    assert.doesNotMatch(JSON.stringify(body), /linux|gcc|compiled|x86|aarch|debian/i);
+  });
+});
+
 describe("CSRF: assertSameOrigin on state-changing routes", () => {
   const login = (headers) => fetch(`${server.baseUrl}/api/auth/login`, {
     method: "POST",

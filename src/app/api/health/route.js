@@ -13,8 +13,12 @@ export async function GET() {
     checkedAt: new Date().toISOString(),
   };
 
+  // This route is public, so it reports only the version number ("17.11").
+  // version() would also reveal the server's OS, CPU and compiler build,
+  // which helps an attacker pick an exploit and tells a visitor nothing useful.
   try {
-    const { rows } = await query("SELECT version() AS version");
+    // server_version is "17.11 (Debian 17.11-1.pgdg12+2)"; keep only "17.11".
+    const { rows } = await query("SELECT split_part(current_setting('server_version'), ' ', 1) AS version");
     result.database = { connected: true, version: rows[0].version };
   } catch (err) {
     // Log details on the server only; the response stays generic.
