@@ -209,3 +209,67 @@ Headless Chrome driven over the DevTools protocol against `next start`, logged i
 |---|---|
 | `npm run build` | Passes; `/api/candidate/jobs` dynamic (ƒ), `/candidate/jobs` partially prerendered. One Turbopack warning ("Dynamic filesystem access causes tracing of the whole project") also appears in builds without this stage's config change |
 | `important_queries.sql` (now 19 queries, Q17–Q19 added for the candidate module) | Whole file runs with exit code 0 |
+
+## Stage 5 — Semantic matching (pgvector)
+
+Design: [vector-design.md](vector-design.md). Tests: `tests/unit/embeddings.test.js`, `tests/unit/recruiter-validation.test.js`, `tests/integration/matching.test.js` (production build on port 3102, real model, real database).
+```powershell
+npm run db:embed
+npm run test:unit
+npm run build
+npm run test:integration
+```
+Results recorded on 2026-10-16: unit **38 pass, 0 fail** (20 auth + 15 embeddings + 3 matches-query validation). Integration **54 pass, 0 fail** (24 auth + 17 candidate + 13 matching). No score in any test is hard-coded; the tests compare orderings and recompute cosine similarity in SQL.
+
+### Unit tests (no server, no database)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| E1 | `chunkWords`: short text; 50 words with max 20 / overlap 5 | 1 chunk; every chunk ≤ 20 tokens, next chunk starts with the previous chunk's last 5 words, no word lost | As expected | Pass |
+| E2 | Words with several word pieces; 1000 words with `maxChunks: 3`; overlap ≥ max | Never over the limit, words not split; 3 chunks + `truncated: true`; error | As expected | Pass |
+| E3 | Weighted mean of `[1,0]×3` and `[0,1]×1`; opposite vectors | Unit length, ratio 3:1; "zero vector" error | As expected | Pass |
+| E4 | `toPgVector` with 384 numbers / 3 numbers / a NaN | `[…]` literal / error / error | As expected | Pass |
+| E5 | Whitespace-only differences; job text builder | Same SHA-256; `"ML Engineer. Train models.. Required skills: PyTorch, Python."` | As expected | Pass |
+| E6 | `tryEmbedResume` with an embedder that throws | Returns `false`, no exception, 0 database queries | As expected | Pass |
+| E7 | Real model: one sentence | 384 dims, length 1 (±1e-6), model name stored, 1 chunk, 64-hex hash | As expected | Pass |
+| E8 | Real model: same text twice; ~840-word text | Dot product > 0.9999; ≥ 3 chunks, still unit length | As expected | Pass |
+| E9 | Real model: ML job vs ML sentence vs React sentence | ML pair more similar than ML–React pair | As expected | Pass |
+| Q1 | Matches query schema: `{}`; `applicantsOnly=true&limit=5`; `yes`, `0`, `51`, `2.5`, `abc`, unknown `sort` | `{false, 10}`; `{true, 5}`; all rejected | As expected | Pass |
+
+### Ranking sanity (`rank_candidates_for_job`, printed by the test)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| V1 | ML Engineer job | All ML/data candidates (Aditi, Rohan, Divya, Ishita, Farhan) above all frontend-only candidates (Sneha, Vikram) | ML/data at #1, #2, #3, #4, #9; Vikram #10 (0.2748), Sneha #12 (0.2438) | Pass |
+| V2 | Frontend Developer job | Sneha and Vikram above all five ML/data candidates | Sneha #1 (0.7552), Vikram #2 (0.7460); best ML/data candidate is Aditi at #8 (0.2619) | Pass |
+| V3 | Scores = direct `1 - (resume <=> job)` computed in SQL; sorted descending | Difference ≤ 0.00005 (rounding) for every candidate | As expected for all 12 | Pass |
+| V4 | `p_applicants_only = TRUE` | Exactly the job's applicants with an embedded primary resume, all `has_applied` | Aditi, Rohan, Divya, Aman (the 4 seeded applicants) | Pass |
+
+Full ranked lists with scores: [vector-design.md §7](vector-design.md#real-results-seeded-data).
+
+### Matches API (`GET /api/recruiter/jobs/:jobId/matches`)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| M1 | Meera (Nimbus) → Nimbus ML job, `limit=5` | 200; 5 matches identical (ids and scores) to the SQL function; model name in response | As expected | Pass |
+| M2 | Arjun (Nimbus, not the job's poster), `applicantsOnly=true` | 200; every match `hasApplied` | As expected | Pass |
+| M3 | Kavya (Kestrel) → Nimbus job | 403 `FORBIDDEN` | 403 | Pass |
+| M4 | Candidate Aditi / admin | 403 / 403 | 403 / 403 | Pass |
+| M5 | No cookie | 401 | 401 | Pass |
+| M6 | Job ids `999999999`, `abc`, `-1` | 404 | 404 ×3 | Pass |
+| M7 | `limit=0`, `limit=51`, `applicantsOnly=yes`, `sort=asc` | 400 | 400 ×4 | Pass |
+| M8 | New job inserted without embedding → embed with `embedJob` → delete job | 404 `NOT_EMBEDDED` → 200 with 3 matches → embedding row gone (cascade) | As expected | Pass |
+
+### Embedding on upload
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| U1 | Upload a .txt resume → list → delete its embedding row (simulated failure) → `embedPending()` → delete resume | 201 `isEmbedded: true`, row with model name, 1 chunk, 384 dims → list says embedded → list says `isEmbedded: false` → re-embedded → embedding row gone (cascade) | As expected | Pass |
+
+### Other Stage 5 checks
+| Check | Result |
+|---|---|
+| `npm run db:migrate` | `015_rank_candidates_for_job.sql` applied; 14 skipped |
+| `npm run db:embed` (first / second run) | 12 resumes + 8 jobs embedded in 2.0 s / 0 embedded in 0.1 s (idempotent) |
+| Stored vectors | `vector_norm = 1.000000`, `vector_dims = 384`, `model_name = sentence-transformers/all-MiniLM-L6-v2` |
+| Function input errors | `rank_candidates_for_job(999999)` → "Job 999999 does not exist"; limit 0 → "Limit must be between 1 and 100" |
+| EXPLAIN ANALYZE | Seq scan + sort on 12 rows (exact, 0.13 ms); with `enable_seqscan = off`, `Index Scan using resume_embeddings_embedding_hnsw_idx`, same top 5. Details in [vector-design.md §8](vector-design.md#8-is-the-hnsw-index-used-explain-analyze) |
+| `important_queries.sql` (now 22 queries, Q20–Q22 added) | Whole file runs with `ON_ERROR_STOP=1`, exit code 0 |
+| Test data cleanup | After the run: 12 resumes / 12 resume embeddings / 8 jobs / 8 job embeddings, 0 `@test.example` users |
+| `npm run build` | Passes; `/api/recruiter/jobs/[jobId]/matches` is dynamic (ƒ). The existing Turbopack warning from `src/lib/candidate/resumes.js:76` is unchanged |

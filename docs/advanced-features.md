@@ -12,7 +12,7 @@ All outputs below are real, captured on 2026-10-09 from PostgreSQL 17.11 running
 | Views | `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary` |
 | Transactions | `update_application_status` (atomic), seed and migrations (one transaction each), `transaction_demo.sql` |
 | Indexing | Stage 1 (B-tree, partial, HNSW) |
-| Vector similarity search | Stage 5 (`rank_candidates_for_job`) |
+| Vector similarity search | Stage 5: `rank_candidates_for_job` (migration 015), see [vector-design.md](vector-design.md) |
 
 ---
 
@@ -166,8 +166,10 @@ SELECT application_id, status, updated_at FROM update_application_status(12, 'sh
  status_changed | Application update: Frontend Developer (React / Next.js) | Your application for Frontend Developer (React / Next.js) moved from applied to shortlisted.
 ```
 
-### 2.3 `rank_candidates_for_job()`: deferred to Stage 5
-It needs real resume and job embeddings. Writing it now would mean fake scores, which rule 5 forbids.
+### 2.3 `rank_candidates_for_job()`: added in Stage 5 (migration 015)
+It was deferred until real resume and job embeddings existed, because writing it earlier would have meant fake scores (rule 5).
+It now ranks candidates by cosine similarity between their primary resume embedding and the job embedding, with an applicants-only option and required-skill counts.
+Design, real outputs and EXPLAIN ANALYZE: [vector-design.md §7–8](vector-design.md#7-how-results-are-retrieved-rank_candidates_for_job).
 
 ---
 
