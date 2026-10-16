@@ -153,6 +153,7 @@ curl -i -X POST http://localhost:3000/api/auth/login -H "Content-Type: applicati
 | 400 | Missing or invalid fields |
 | 401 `INVALID_CREDENTIALS` | Wrong password **or** unknown email (identical response) |
 | 403 `ACCOUNT_DISABLED` | Correct password but `is_active = false` |
+| 429 `TOO_MANY_ATTEMPTS` | 5 attempts for this email from this IP in the last 15 minutes without a successful login. `Retry-After` header in seconds; message "Too many failed login attempts. Try again in N minutes." Same answer for unknown emails |
 
 ### `POST /api/auth/logout`
 Always 200 `{ "ok": true }`, and clears the cookie (`Max-Age=0`).
@@ -202,7 +203,7 @@ Results are recorded in [test-cases.md](test-cases.md#stage-3--authentication-an
 ## 10. Limitations (known, acceptable for this project)
 
 - **Stateless JWT.** Logout clears the browser cookie, but a token copied before logout stays valid until it expires (max 8 h). Disabling the account or changing its role invalidates it immediately (DB check). A server-side revocation list (`jti` deny-list) would be the next step.
-- **No rate limiting or lockout** on login. bcrypt cost 12 slows guessing but does not stop it. A production deployment would add per-IP and per-account limits.
+- **Login rate limiting is in memory** (Stage 9, `src/lib/auth/login-rate-limit.js`): 5 attempts per email + IP per 15 minutes, counted before the password check so parallel requests cannot slip past, reset by a successful login, 429 with `Retry-After`. The counters live in one server process (lost on restart, not shared by several servers; a real deployment would keep them in Redis or the database). The IP comes from `X-Forwarded-For`: Next.js fills it with the socket address only when the client sent none, so without a trusted proxy in front a client can choose its own "IP" and get a fresh count. See [security-review.md §5](security-review.md#5-known-limitations-not-fixed).
 - **Registration reveals that an email exists** (409 `EMAIL_TAKEN`). This is the usual sign-up trade-off; login itself does not reveal it.
 - **No email verification or password reset** in this project's scope.
 - **No `script-src` Content-Security-Policy** (Stage 9). The CSP only sets `frame-ancestors`, `base-uri`, `object-src` and `form-action`. Restricting scripts needs a fresh nonce per request, which forces every page to render dynamically and conflicts with Cache Components / partial prerendering. React escapes all output, which is the main XSS defence here.
