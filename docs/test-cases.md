@@ -1,538 +1,362 @@
-# TalentMatch — Test Cases and Results
+# TalentMatch — Test Cases and Results (final, Stage 9)
 
-## Stage 1 — Schema and constraint tests
+Every row marked **Pass** below was run on **2026-10-16** in the final Stage 9 run, on a database rebuilt from scratch (`db:reset → db:migrate → db:seed → db:embed`) with the final code. Nothing is marked Pass from an older run. Checks from earlier stages that were *not* repeated are listed separately in [§ Not re-run in Stage 9](#not-re-run-in-stage-9) and are not counted.
 
-Script: `db/tests/stage1_constraint_tests.sql`. Each test runs inside `BEGIN … ROLLBACK`, so seeded data is never changed.
+**Environment:** Windows 11, Node.js 22.19.0, Next.js 16.4.0 production build (`next start`), PostgreSQL 17.11 + pgvector 0.8.7 in Docker (port 5433), model `sentence-transformers/all-MiniLM-L6-v2`.
 
-Run it from the project root (PowerShell):
+**"As expected"** in the Actual column means every assertion in that test passed. Where the run printed values, they are quoted.
+
+## Summary of the final run
+
+| Suite | Command | Real output | Result |
+|---|---|---|---|
+| Build | `npm run build` | exit 0, "Compiled successfully"; 1 Turbopack warning ("Dynamic filesystem access…", `src/app/api/candidate/resumes/[resumeId]/route.js`), present since Stage 4 | Pass |
+| Unit tests | `npm run test:unit` | `# tests 67  # pass 67  # fail 0` | Pass |
+| Integration tests | `npm run test:integration` | `# tests 138  # suites 34  # pass 138  # fail 0` (53.8 s) | Pass |
+| Stage 1 SQL | `db/tests/stage1_constraint_tests.sql` | 8 of 8 invalid writes rejected, each rolled back | Pass |
+| Stage 2 SQL | `db/tests/stage2_advanced_tests.sql` | 27 PASS lines (T1–T13), `=== All Stage 2 tests passed …` | Pass |
+| Important queries | `psql -v ON_ERROR_STOP=1 < db/queries/important_queries.sql` | Q1–Q41 ran, exit code 0 | Pass |
+| Transaction demo | `db/demos/transaction_demo.sql` | AFTER equals BEFORE (Data Analyst `applicant_count` 3 and 3) | Pass |
+| Clean setup | Fresh `git clone`, README steps only | All steps worked; 3 README gaps fixed (9-25) | Pass |
+
 ```powershell
+npm run db:reset -- --yes; npm run db:migrate; npm run db:seed; npm run db:embed
+npm run build
+npm run test:unit
+npm run test:integration
 Get-Content db/tests/stage1_constraint_tests.sql | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/tests/stage2_advanced_tests.sql   | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
 ```
 
-Results recorded on 2026-10-09 against PostgreSQL 17.11 + pgvector 0.8.7:
+Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 offers (the seed).
 
-| # | Test | Expected | Actual PostgreSQL error | Rejected by | Result |
-|---|---|---|---|---|---|
-| 1 | Insert a user with an existing email | Reject | `duplicate key value violates unique constraint "users_email_key"` — `Key (email)=(aditi.sharma@mail.example) already exists.` | UNIQUE `users_email_key` | Pass |
-| 2 | Set an application's status to `hired` | Reject | `new row for relation "applications" violates check constraint "applications_status_check"` | CHECK `applications_status_check` | Pass |
-| 3 | Insert a job with salary_min 1,500,000 and salary_max 900,000 | Reject | `new row for relation "jobs" violates check constraint "jobs_salary_range_check"` | CHECK `jobs_salary_range_check` | Pass |
-| 4 | Apply twice to the same job with the same candidate | Reject | `duplicate key value violates unique constraint "applications_job_id_candidate_id_key"` — `Key (job_id, candidate_id)=(1, 16) already exists.` | UNIQUE `(job_id, candidate_id)` | Pass |
-| 5 | Application for job_id 999999 (doesn't exist) | Reject | `insert or update on table "applications" violates foreign key constraint "applications_job_fkey"` — `Key (job_id)=(999999) is not present in table "jobs".` | FK `applications_job_fkey` | Pass |
-| 6 (bonus) | Create a candidate profile for a recruiter account | Reject | `violates foreign key constraint "candidates_user_fkey"` — `Key (user_id, role)=(2, candidate) is not present in table "users".` | Composite FK `(user_id, role)` | Pass |
-| 7 (bonus) | Store the plaintext password `password123` | Reject | `new row for relation "users" violates check constraint "users_password_hash_bcrypt_check"` | CHECK bcrypt format | Pass |
-| 8 (bonus) | Delete a company that still has recruiters and jobs | Reject | `update or delete on table "companies" violates foreign key constraint "recruiters_company_fkey" on table "recruiters"` | FK ON DELETE RESTRICT | Pass |
+---
 
-Row counts (users/jobs/applications/companies) were `17/8/16/3` both before and after the tests.
+## Stage 1 — Schema, constraints, migrations
 
-## Stage 1 — Migration, seed and reset checks
-
-| Check | Result |
-|---|---|
-| `npm run db:migrate` on an empty database | 9 applied |
-| `npm run db:migrate` run again | 0 applied, 9 skipped (tracked in `tm_meta.schema_migrations` with SHA-256 checksums) |
-| `npm run db:seed` run twice | Identical row counts both times (idempotent) |
-| Tables in `public` | 16 |
-| Constraints | 16 PK, 22 FK, 8 UNIQUE, 56 CHECK |
-| Indexes | 46 total, including 2 HNSW (`vector_cosine_ops`) and 3 partial |
-| `applicant_count` vs real `COUNT(*)` | Equal for all 8 jobs |
-| Latest history status vs `applications.status` | 0 mismatches |
-| `match_score` | NULL for all 16 applications (no fake scores) |
-| `db:reset` with DATABASE_URL pointing at the native Postgres (port 5432 / db `postgres`) | Refused, nothing changed |
-| `db:reset` with a non-local host | Refused |
-| `db:reset` with a wrong confirmation typed | Cancelled, nothing changed |
-| `db:reset -- --yes` → `db:migrate` → `db:seed` | 0 tables after reset; full rebuild; constraint tests pass again |
-| `GET /api/health` (production build) | HTTP 200, PostgreSQL 17.11, pgvector 0.8.7 |
-| `npm run build` | Passes |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 1-01 | Schema | Duplicate email | SQL INSERT a user with `aditi.sharma@mail.example` | Rejected by UNIQUE | `duplicate key value violates unique constraint "users_email_key"` | Pass |
+| 1-02 | Schema | Unknown application status | SQL UPDATE status to `hired` | Rejected | `Invalid application status transition: applied -> hired`. Since Stage 2 the BEFORE trigger refuses it before the CHECK `applications_status_check` runs; the CHECK is still there as a second line | Pass |
+| 1-03 | Schema | Salary range | INSERT job with min 1,500,000 > max 900,000 | Rejected by CHECK | `violates check constraint "jobs_salary_range_check"` | Pass |
+| 1-04 | Schema | Duplicate application | INSERT the same (job, candidate) twice | Rejected by UNIQUE | `violates unique constraint "applications_job_id_candidate_id_key"` | Pass |
+| 1-05 | Schema | FK to missing job | INSERT application for job 999999 | Rejected by FK | `violates foreign key constraint "applications_job_fkey"` | Pass |
+| 1-06 | Schema | Candidate profile for a recruiter | INSERT `candidates` row for user 2 | Rejected by composite FK (user_id, role) | `violates foreign key constraint "candidates_user_fkey"` | Pass |
+| 1-07 | Schema | Plaintext password | INSERT user with hash `password123` | Rejected by CHECK | `violates check constraint "users_password_hash_bcrypt_check"` | Pass |
+| 1-08 | Schema | Delete company in use | DELETE company 3 | Rejected (ON DELETE RESTRICT) | `violates foreign key constraint "recruiters_company_fkey"` | Pass |
+| 1-09 | Migrations | Migrate an empty database | `db:reset -- --yes`, then `db:migrate` | All files applied in order | `Done: 21 applied, 0 already up to date.` | Pass |
+| 1-10 | Migrations | Migrate again | `db:migrate` | Nothing re-applied (SHA-256 tracked) | `Done: 0 applied, 21 already up to date.` | Pass |
+| 1-11 | Seed | Seed twice | `db:seed` twice | Same row counts (idempotent) | Both runs: users 17, applications 18, history 40, interviews 9, offers 3, notifications 10 | Pass |
+| 1-12 | Schema | Catalogue counts | SQL on `information_schema` / `pg_catalog` | 16 domain tables, 3 views, HNSW indexes on both embedding tables | 16 tables, 3 views, 16 PK, 22 FK, 8 UNIQUE, 57 CHECK, 46 indexes (2 HNSW, 3 partial), 17 triggers | Pass |
 
 ## Stage 2 — Triggers, functions, views, queries, transactions
 
-Script: `db/tests/stage2_advanced_tests.sql`. It runs in one transaction that is rolled back, and every check is an `ASSERT`.
-```powershell
-Get-Content db/tests/stage2_advanced_tests.sql | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
-```
-Results recorded on 2026-10-09 on a freshly reset, migrated and seeded database. Full output is in [advanced-features.md §6](advanced-features.md#6-test-results-dbtestsstage2_advanced_testssql).
-
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| T1 | Insert an application | applicant_count +1; history `NULL → applied` by the candidate | 2 → 3; history row written, changed_by = candidate | Pass |
-| T2 | Delete that application | applicant_count −1 | 3 → 2 | Pass |
-| T3 | Move an application to another job, edit a non-job column, move it back | −1/+1, no change, then back | old 2→1→2, new 2→3→2 | Pass |
-| T4 | Status applied → shortlisted with actor + note set | History row with actor and note | `applied → shortlisted by user 3, "Good SQL test score"` | Pass |
-| T5 | applied→offered, applied→interviewed, rejected→shortlisted, offered→interviewed, interviewed→applied | All rejected, no history | 5/5 `Invalid application status transition …` (check_violation), 0 history rows | Pass |
-| T6 | Full valid path, then a same-status update | 5 history rows; no-op not logged | 5 rows, no-op ignored | Pass |
-| T7 | Insert a new application as `offered` | Rejected | `A new application must start with status 'applied' (got offered)` | Pass |
-| T8a–e | updated_at: real edit / no-op / counter-only change / status change / profile edit | Refreshed / unchanged / unchanged / refreshed / refreshed | As expected (e.g. jobs 2026-01-01 → now(); applications 2026-09-05 → now()) | Pass |
-| T9a | `update_application_status` by the job's company recruiter | Status, history with actor+note, 1 notification | All three written | Pass |
-| T9b | Recruiter from another company | insufficient_privilege | `User 2 is not allowed to update application 11` | Pass |
-| T9c | Candidate updates own status | insufficient_privilege | `User 17 is not allowed …` | Pass |
-| T9d | Unknown status `hired` | invalid_parameter_value | `Unknown application status: hired` | Pass |
-| T9e | Application 999999 | no_data_found | `Application 999999 does not exist` | Pass |
-| T9f–g | Backwards transition via the function | Rejected; nothing saved | check_violation; status, history and notifications unchanged | Pass |
-| T9h | Admin updates any application | Allowed | interviewed → offered | Pass |
-| T10a | `generate_hiring_pipeline_report()` totals + company filter | 1 row per job; totals equal applications | 8 rows; totals match; Nimbus → 3 rows | Pass |
-| T10b | from > to | invalid_parameter_value | `Invalid date range: from (2026-10-01) is after to (2026-09-01)` | Pass |
-| T10c | Unknown company | no_data_found | `Company 424242 does not exist` | Pass |
-| T11 | Views vs base tables | No double counting | Pipeline totals = applicant_count for every job; application view rows = applications; summary totals = applications and offers | Pass |
-| T11b | Company with a job but 0 applications | Hidden by HAVING in `company_hiring_summary` | Hidden; still listed per job in `recruiter_pipeline_view` | Pass |
-| T12 | Delete a candidate user (cascade) | Each affected job −1 | ML 4→3, Frontend 3→2 | Pass |
-| T13 | `TRUNCATE applications CASCADE` | All counts 0 | All 0 | Pass |
-
-| Other check | Result |
-|---|---|
-| `important_queries.sql` (16 queries) | All ran with exit code 0, no errors; outputs in advanced-features.md §4 |
-| `transaction_demo.sql` | COMMIT persisted (count 3→4, then cleanup back to 3); failed transaction rolled back (0 demo rows, count 3); SAVEPOINT partial rollback worked; BEFORE = AFTER |
-| Fresh `db:reset → db:migrate (13) → db:seed` | 16 applications, 31 history rows (no trigger duplicates) |
-| applicant_count vs real count; latest history vs status; applications without history; history rows breaking the transition rules | 0 / 0 / 0 / 0 mismatches |
-| `db:reset` leaves no objects behind | 0 tables, 0 views, 0 functions; `vector` extension kept |
-| Re-running `db:seed` | jobs `updated_at` and `applicant_count` fingerprint unchanged |
-| Stage 1 constraint tests after Stage 2 | 8/8 still rejected |
-| `npm run build`; `GET /api/health` | Build passes; HTTP 200 |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 2-01 | Triggers | T1 insert application | INSERT application | `applicant_count` +1; history `NULL → applied` | `applicant_count 3 -> 4, history (NULL -> applied) by candidate 9` | Pass |
+| 2-02 | Triggers | T2 delete application | DELETE it | `applicant_count` −1 | `4 -> 3` | Pass |
+| 2-03 | Triggers | T3 move application between jobs | UPDATE job_id there and back | −1/+1 then back | `old job 2 -> 1 -> 2, new job 3 -> 4 -> 3` | Pass |
+| 2-04 | Triggers | T4 status change with actor + note | `set_config` actor/note, UPDATE status | History row with actor and note | `applied -> shortlisted by user 3, note "Good SQL test score"` | Pass |
+| 2-05 | Triggers | T5 invalid transitions | 5 illegal moves | All rejected, no history | `5/5 invalid transitions rejected, no history rows written` | Pass |
+| 2-06 | Triggers | T6 full path + no-op | applied→…→rejected, then same status | 5 history rows; no-op not logged | `5 history rows for the full path; same-status update ignored` | Pass |
+| 2-07 | Triggers | T7 insert as `offered` | INSERT with status offered | Rejected | `A new application must start with status 'applied' (got offered)` | Pass |
+| 2-08 | Triggers | T8a–e `updated_at` | Real edit / no-op / counter change / status change / profile edit | Refreshed / unchanged / unchanged / refreshed / refreshed | 5/5 PASS lines (e.g. `jobs.updated_at 2026-01-01 -> 2026-10-16 …`) | Pass |
+| 2-09 | Functions | T9a `update_application_status` | Called by the company's recruiter | Status, history, 1 notification | `status=interviewed history=(shortlisted -> interviewed by 4, "Technical round cleared") + 1 notification` | Pass |
+| 2-10 | Functions | T9b–c wrong actor | Other company's recruiter; the candidate | insufficient_privilege | `User 2 is not allowed…`, `User 17 is not allowed…` | Pass |
+| 2-11 | Functions | T9d–e bad input | Status `hired`; application 999999 | Errors | `Unknown application status: hired`; `Application 999999 does not exist` | Pass |
+| 2-12 | Functions | T9f–h | Backwards move; nothing saved; admin override | Rejected / unchanged / allowed | 3/3 PASS lines | Pass |
+| 2-13 | Functions | T10a–c `generate_hiring_pipeline_report` | All companies, Nimbus only, from > to, unknown company | 1 row per job; errors for bad input | `8 job rows, 19 applications total; Nimbus filter -> 3 rows`; `Invalid date range…`; `Company 424242 does not exist` | Pass |
+| 2-14 | Views | T11, T11b | Compare 3 views with base tables; company with 0 applications | Equal; hidden by HAVING | `all three views consistent with base tables`; hidden in summary, visible per job | Pass |
+| 2-15 | Triggers | T12 cascade delete | DELETE a candidate user | Each affected job −1 | `ML Engineer 4 -> 3, Frontend 3 -> 2` | Pass |
+| 2-16 | Triggers | T13 TRUNCATE | `TRUNCATE applications CASCADE` (own transaction since Stage 9) | Every count 0 | `all applicant_count values are 0 after TRUNCATE` | Pass |
+| 2-17 | Queries | Important queries | Whole file with `ON_ERROR_STOP=1` | Q1–Q41 run, no error | Exit code 0; Q28 and Q40 print their deliberate, caught errors as NOTICEs | Pass |
+| 2-18 | Transactions | COMMIT vs ROLLBACK demo | `transaction_demo.sql` | Part A persists then is cleaned up; Part B rolls back; data unchanged | `applicant_count` 3 before and 3 after; 0 demo rows | Pass |
+| 2-19 | Consistency | Derived data | SQL: count vs `COUNT(*)`; latest history vs status | 0 mismatches | 0 / 0 | Pass |
 
 ## Stage 3 — Authentication and RBAC
 
-Runner: Node's built-in `node:test` (no extra dependency). Details are in [authentication.md §9](authentication.md#9-tests).
-```powershell
-npm run test:unit
-npm run build
-npm run test:integration
-```
-Results recorded on 2026-10-09 against the production build (`next start`) and the seeded PostgreSQL database.
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 3-01 | Auth unit | bcrypt hash format | `hashPassword()` | `$2b$12$…`, never the plaintext | As expected | Pass |
+| 3-02 | Auth unit | Correct password | `verifyPassword()` | true | As expected | Pass |
+| 3-03 | Auth unit | Wrong password | `verifyPassword()` | false | As expected | Pass |
+| 3-04 | Auth unit | Random salt | Hash the same password twice | Different hashes | As expected | Pass |
+| 3-05 | Auth unit | Unknown user | `verifyPassword(p, null)` | false (dummy hash, same timing) | As expected | Pass |
+| 3-06 | Auth unit | > 72 bytes | Hash a 73-byte password | Refused | As expected | Pass |
+| 3-07 | Auth unit | JWT round-trip | Sign, verify | Same id and role | As expected | Pass |
+| 3-08 | Auth unit | JWT payload | Decode | Only `sub, role, iss, aud, iat, exp` | As expected | Pass |
+| 3-09 | Auth unit | Edited payload | Change role in token | Rejected | As expected | Pass |
+| 3-10 | Auth unit | Other secret | Sign with another key | Rejected | As expected | Pass |
+| 3-11 | Auth unit | Expired | Token with past `exp` | Rejected | As expected | Pass |
+| 3-12 | Auth unit | `alg: none` | Unsigned token | Rejected | As expected | Pass |
+| 3-13 | Auth unit | Bad tokens | Wrong audience, garbage, empty | Rejected | As expected | Pass |
+| 3-14 | Auth unit | Secret config | Missing / short / placeholder secret | Throws without printing the value | As expected | Pass |
+| 3-15 | Auth unit | Cookie flags | `sessionCookieOptions()` | httpOnly, SameSite=Lax, path `/`, finite max age | As expected | Pass |
+| 3-16 | Auth unit | Secure flag | NODE_ENV production vs not | Secure only in production | As expected | Pass |
+| 3-17 | Auth unit | Register schema normalises | Upper-case email, padded name | Lower-cased, trimmed | As expected | Pass |
+| 3-18 | Auth unit | Extra fields | `role` in body | Rejected (strict) | As expected | Pass |
+| 3-19 | Auth unit | Password rules | Short, no digit | Rejected | As expected | Pass |
+| 3-20 | Auth unit | Bad email / missing fields | Parse | Rejected | As expected | Pass |
+| 3-21 | Register | Valid sign-up | POST `/api/auth/register` | 201, safe user, cookie HttpOnly + SameSite=Lax + Max-Age=28800; `$2b$12$` hash; candidates row | As expected | Pass |
+| 3-22 | Register | Duplicate email (any case) | Register twice | 409 `EMAIL_TAKEN` | As expected | Pass |
+| 3-23 | Register | Invalid input | Bad email, short password, … | 400 with field errors | As expected | Pass |
+| 3-24 | Register | Privilege escalation | Body with `role: admin`, `isAdmin` | 400, no user row | As expected | Pass |
+| 3-25 | Register | Content-type / JSON / CSRF | Form body, malformed JSON, foreign Origin | 415 / 400 / 403 `CROSS_ORIGIN` | As expected | Pass |
+| 3-26 | Login | Seeded accounts | Admin, recruiter, candidate | 200 with the right role, no hash in body | As expected | Pass |
+| 3-27 | Login | Email case | Upper-case email | 200 | As expected | Pass |
+| 3-28 | Login | No account enumeration | Wrong password vs unknown email | Identical 401 `INVALID_CREDENTIALS`, no cookie | As expected | Pass |
+| 3-29 | Login | Invalid input | Missing fields, bad email | 400 | As expected | Pass |
+| 3-30 | Login | `last_login_at` | Log in | Set; `updated_at` unchanged (014) | As expected | Pass |
+| 3-31 | Login | Disabled account | `is_active = false` | Login 403; existing token 401 | As expected | Pass |
+| 3-32 | Session | `/me` anonymous | GET | 401 | As expected | Pass |
+| 3-33 | Session | `/me` signed in | GET | Exactly `id, email, fullName, role` | As expected | Pass |
+| 3-34 | Session | Forged tokens | Garbage, tampered, wrong secret, `none`, expired | 401 | As expected | Pass |
+| 3-35 | Session | Role in token ≠ DB | Signed token claiming admin | 401 (DB is the source of truth) | As expected | Pass |
+| 3-36 | Logout | Clear cookie | POST logout | `Max-Age=0`, same flags; `/me` then 401 | As expected | Pass |
+| 3-37 | Logout | Without session | POST logout | 200 | As expected | Pass |
+| 3-38 | RBAC | Anonymous on role routes | `/api/demo/*` | 401 ×3 | As expected | Pass |
+| 3-39 | RBAC | Admin | Demo routes | 200 own, 403 others | As expected | Pass |
+| 3-40 | RBAC | Recruiter | Demo routes | 200 own, 403 others | As expected | Pass |
+| 3-41 | RBAC | Candidate | Demo routes | 200 own, 403 others | As expected | Pass |
+| 3-42 | RBAC | Ownership | `/api/demo/users/:id` | Own 200, other 403, admin 200 / missing 404, `abc` 400, anonymous 401 | As expected | Pass |
+| 3-43 | Secrets | Responses | Scan every response body and header seen in the run | No JWT secret, DB password or bcrypt hash | As expected | Pass |
+| 3-44 | Secrets | Git | Scan tracked files | No secret; `.env.local` not tracked | As expected | Pass |
 
-### Unit tests (`tests/unit/auth.test.js`): 20 pass, 0 fail
-| Area | Tests |
-|---|---|
-| bcrypt | hash is `$2b$12$…` and never the plaintext; correct password accepted; wrong/empty rejected; random salt (two hashes differ); unknown user returns false; > 72 bytes refused |
-| JWT | round-trip id/role; payload has only `sub, role, iss, aud, iat, exp`; edited payload rejected; wrong secret rejected; expired rejected; `alg: none` rejected; wrong audience/garbage/empty rejected; missing, short or placeholder secret throws without leaking the value |
-| Cookie | httpOnly, SameSite=Lax, path `/`, 8 h; Secure only in production |
-| Zod | email lower-cased, name trimmed; `role`/`isAdmin` fields rejected; password rules; bad email / missing fields |
+## Stage 4 — Candidate module
 
-### Integration tests (`tests/integration/auth.test.js`): 24 pass, 0 fail
-| # | Test | Expected | Result |
-|---|---|---|---|
-| R1 | Register valid candidate | 201, safe user only, cookie HttpOnly + SameSite=Lax + Path=/ + Max-Age=28800 + Secure; DB hash `$2b$12$`, bcrypt-verifies, role candidate, candidates row created | Pass |
-| R2 | Duplicate email, also in UPPER case | 409 `EMAIL_TAKEN` | Pass |
-| R3 | Bad email / short password / no digit / 80-byte password / blank name / missing fields | 400 `VALIDATION_ERROR` with field errors | Pass |
-| R4 | Body with `role: admin`, `role: recruiter`, `role: candidate`, `isAdmin: true` | 400, **no user row created** | Pass |
-| R5 | Form-encoded body / malformed JSON / `Origin: https://evil.example` | 415 / 400 / 403 `CROSS_ORIGIN` | Pass |
-| L1 | Seeded admin, recruiter, candidate with correct password | 200, correct role, cookie, no hash or "password" in body | Pass |
-| L2 | Email in upper case | 200 | Pass |
-| L3 | Wrong password vs unknown email | Both 401 `INVALID_CREDENTIALS`, identical bodies, no cookie | Pass |
-| L4 | Missing password / bad email / missing email | 400 | Pass |
-| L5 | `last_login_at` updated, `updated_at` unchanged | Migration 014 works | Pass |
-| L6 | Disable an account (`is_active = false`) | Login 403 `ACCOUNT_DISABLED`; its existing token now gives 401 | Pass |
-| M1 | `/me` without cookie | 401 `UNAUTHORIZED` | Pass |
-| M2 | `/me` with valid cookie | 200, keys exactly `id, email, fullName, role`; no hash/password text | Pass |
-| M3 | Garbage, tampered (role→admin), wrong-secret, `alg: none`, expired tokens | All 401 | Pass |
-| M4 | Validly signed token claiming `admin` for a candidate id; token for a non-existent user | 401 on `/me` and `/api/demo/admin` (DB role is the source of truth) | Pass |
-| O1 | Logout | 200; `tm_session=`, Max-Age=0, HttpOnly, Path=/; then `/me` 401 | Pass |
-| O2 | Logout without a session | 200 | Pass |
-| G1 | `/api/demo/{admin,recruiter,candidate}` anonymous | 401 ×3 | Pass |
-| G2–4 | Each seeded role on the three demo routes | 200 on its own role, 403 `FORBIDDEN` on the others | Pass |
-| W1 | `/api/demo/users/:id` | Own 200, other's 403 (candidate and recruiter), admin any 200, admin missing 404, `abc` 400, anonymous 401 | Pass |
-| S1 | Every recorded response body and header | No JWT secret, no DB password, no bcrypt hash | Pass |
-| S2 | Git-tracked/staged files | No JWT secret or DB password; `.env.local` not tracked | Pass |
-
-Test accounts (`authtest.<run>.<n>@test.example`) were deleted afterwards: 0 leftover rows, 17 users as seeded.
-
-### Negative control (proves the tests can fail)
-`if (roles) assertRole(user, roles)` in `withAuth` was temporarily commented out and the app rebuilt. The integration run then gave **21 pass / 3 fail**: the three role-guard tests (G2–G4). The file was restored byte-for-byte, rebuilt, and the run went back to 24/24.
-
-### Other Stage 3 checks
-| Check | Result |
-|---|---|
-| Fresh `db:reset → db:migrate (14) → db:seed`, then integration tests | 24/24 |
-| Stage 1 constraint tests | 8/8 still rejected |
-| Stage 2 advanced tests | 27/27 PASS |
-| `npm run build` | Passes; all `/api/*` routes dynamic (ƒ), `/login` and `/register` static, `/` partially prerendered |
-| `GET /api/health` | HTTP 200, PostgreSQL 17.11, pgvector 0.8.7 |
-| Page smoke test | `/` signed out shows the Sign in / Create account links; `/login` 2 inputs, `/register` 4 inputs, no role field; `/` with Meera's cookie shows "Signed in as … Meera Iyer" and Sign out; no hash in the HTML |
-
-## Stage 4 — Candidate module (profile, skills, resumes, job browsing)
-
-Tests live in `tests/integration/candidate.test.js` and run against the production build (`next start` on port 3101) and the seeded database. `tests/fixtures/sample-resume.pdf` is a real PDF printed by a browser from `sample-resume.html` (embedded fonts, compressed streams; fictional person).
-```powershell
-npm run build
-npm run test:integration
-```
-Results recorded on 2026-10-16: **41 pass, 0 fail** for the whole integration suite (24 Stage 3 auth tests + 17 candidate tests). Unit tests: 20 pass, 0 fail.
-
-### Integration tests (`tests/integration/candidate.test.js`): 17 pass, 0 fail
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| C1 | Candidate endpoints anonymous / as recruiter | 401 / 403 | 401; 403 on profile, skills, resumes | Pass |
-| C2 | Read and update own profile; body with `role: admin` | 200 with saved values; 400 | 200, name/location/experience saved; `role` rejected with 400 | Pass |
-| C3 | Save profile with optional fields `null` or `""` | 200, stored as NULL | 200; location and headline returned as `null` | Pass |
-| C4 | Add a catalogue skill, remove it; proficiency 8 | 201, 200; 400 | As expected; skill gone after delete | Pass |
-| C5 | Add a new skill, then post the same skill again | 201 `created: true`, then 200 `created: false` with new values | 201 → 200; proficiency 2 → 5, years 0.5 → 3 | Pass |
-| C6 | Delete another candidate's skill (Aditi's) | 404; her row kept | 404; row still in `candidate_skills` | Pass |
-| C7 | Upload a .txt resume; another candidate deletes it; owner deletes it | 201; 404 with row kept; 200 | As expected | Pass |
-| C8 | Upload the real PDF | 201, first resume is primary, text extracted | 201; `isPrimary: true`; `extracted_text` contains "Priya Natarajan" and "PostgreSQL" | Pass |
-| C9 | 5 MB + 1 byte file; `.docx`; `image/png` named `.pdf`; text named `.pdf`; `%PDF-` header with garbage | 413 `FILE_SIZE`; 415 `FILE_TYPE`; 415; 400 `INVALID_PDF`; 400 `INVALID_PDF` | All as expected; 0 resume rows saved for that account | Pass |
-| C10 | Set primary resume (`PATCH /api/candidate/resumes/:id`) | 200; exactly one primary | 200; only the new resume has `is_primary` | Pass |
-| C10b | Same PATCH again / by another candidate / `isPrimary: false` / extra key / id `abc` | 200 / 404 / 400 / 400 / 404 | As expected; primary unchanged | Pass |
-| C10c | Delete the primary resume | Newest remaining resume becomes primary | Promoted | Pass |
-| C11 | 5 rounds × 8 parallel first uploads for a new candidate | All 201; exactly 1 primary of 8 | All 201; `{primaries: 1, total: 8}` every round | Pass |
-| J1 | `/api/candidate/jobs` anonymous / recruiter / admin | 401 / 403 / 403 | As expected | Pass |
-| J2 | No filters | Exactly the open jobs; no draft/closed job | The 6 open jobs; job 4 (draft) and 7 (closed) absent | Pass |
-| J3 | Keyword `devops`, `python` (skill), no-match, `%`, `' OR 1=1 --` | Matches in title/description/company/skill; 0; 0; 0 | As expected (wildcards and SQL text treated as plain text) | Pass |
-| J4 | `location=pune`, `employmentType=internship`, `experience=1.5`, all combined, all empty | Same ids as the equivalent SQL filter on open jobs; empty = no filter | Ids match exactly in every case | Pass |
-| J5 | `employmentType=permanent`, `experience=-1`, `experience=abc`, `status=draft`, 101-char keyword | 400 | 400 for all five | Pass |
-| J6 | `hasApplied` for Aditi | True exactly for her applications to open jobs | Matches `applications` table | Pass |
-
-Test accounts (`candidate.module.<run>…@test.example`) and their uploaded files are deleted afterwards: 0 leftover test users, 0 files in `uploads/resumes`, 17 users as seeded.
-
-### Bugs found and fixed in this stage (with evidence)
-| Bug | How it showed up | Fix | Evidence after the fix |
-|---|---|---|---|
-| Every PDF upload failed in the production build | Real PDF → 400 `RESUME_PARSE_FAILED`. Hidden causes: (1) bundled pdfjs could not find `.next/server/chunks/pdf.worker.mjs`; (2) `pdf.destroy()` does not exist in pdfjs 6 | `serverExternalPackages: ["pdfjs-dist"]`; clean up with `loadingTask.destroy()`; specific 400s for damaged / password-protected / image-only PDFs, logged 500 otherwise | C8 passes; each cause was confirmed separately by rebuilding with only the other fix |
-| Two parallel first uploads could both become primary | Unique index `resumes_one_primary_per_candidate` rejected all but one: 409 `CONFLICT` | Lock the candidate row with `SELECT … FOR NO KEY UPDATE` at the start of the upload/delete/set-primary transaction | **Negative control:** with the lock removed and the app rebuilt, C11 failed in round 2 (7 of 8 uploads got 409). With the lock: passes |
-| Saving a profile with an empty optional field crashed the page | `null.trim()` in `saveProfile`; the Save button stayed disabled | `(value ?? "").trim()`; `setBusy(false)` in `finally` | Manual check below |
-| Form not reset after a resume upload | `e.currentTarget` is `null` after `await` | Keep the form element in a variable first | Manual check below |
-| Re-adding an existing skill returned 201 | Upsert always answered "created" | `RETURNING (xmax = 0) AS inserted` → 201 or 200 | C5 |
-
-### Manual UI check (real browser)
-Headless Chrome driven over the DevTools protocol against `next start`, logged in as seeded candidate `divya.krishnan@mail.example`. Her profile and resumes were restored afterwards.
-| Step | Result |
-|---|---|
-| Log in | Home page shows "Signed in as Divya Krishnan · Candidate" and the dashboard link |
-| Clear phone, location, headline, education → Save | "Profile saved successfully."; Save button enabled again; database columns are NULL |
-| Upload `sample-resume.pdf` | "Resume uploaded successfully."; file input cleared; listed with size 51.1 KB; 581 characters extracted |
-| Set as primary | "Primary resume updated."; only `sample-resume.pdf` has the Primary badge; database agrees |
-| Browse jobs | 6 open jobs |
-| Keyword `python` → + Bengaluru → + Internship | 3 → 3 → 1 (NLP Research Intern) |
-| Experience 1.5 only | 3 (NLP Research Intern, Frontend Developer, Data Analyst) |
-| Keyword with no match | 0 and "No open jobs match these filters." |
-| Browser console | No errors or exceptions |
-
-### Other Stage 4 checks
-| Check | Result |
-|---|---|
-| `npm run build` | Passes; `/api/candidate/jobs` dynamic (ƒ), `/candidate/jobs` partially prerendered. One Turbopack warning ("Dynamic filesystem access causes tracing of the whole project") also appears in builds without this stage's config change |
-| `important_queries.sql` (now 19 queries, Q17–Q19 added for the candidate module) | Whole file runs with exit code 0 |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 4-01 | Candidate | Access control | Candidate endpoints anonymous / as recruiter | 401 / 403 | As expected | Pass |
+| 4-02 | Profile | Read + update own | GET, PATCH; body with `role` | 200 with saved values; 400 | As expected | Pass |
+| 4-03 | Profile | Clear optional fields | PATCH with `null` / `""` | 200, stored as NULL | As expected | Pass |
+| 4-04 | Skills | Add / remove; bad proficiency | POST, DELETE; proficiency 8 | 201, 200; 400 | As expected | Pass |
+| 4-05 | Skills | Upsert | Same skill twice | 201 `created: true`, then 200 `created: false` | As expected | Pass |
+| 4-06 | Skills | Other candidate's skill | DELETE Aditi's skill | 404, row kept | As expected | Pass |
+| 4-07 | Resumes | Text upload, list, delete | Upload .txt; other candidate deletes; owner deletes | 201; 404 (row kept); 200 | As expected | Pass |
+| 4-08 | Resumes | Real PDF | Upload `tests/fixtures/sample-resume.pdf` | 201, primary, text extracted | As expected | Pass |
+| 4-09 | Resumes | Bad files | 5 MB + 1, `.docx`, PNG named `.pdf`, text named `.pdf`, broken PDF | 413 / 415 / 415 / 400 / 400; nothing saved | As expected | Pass |
+| 4-10 | Resumes | Set primary | PATCH; again; other candidate; bad bodies | Exactly one primary; 404 / 400 for misuse | As expected | Pass |
+| 4-11 | Resumes | Concurrency | 8 parallel first uploads | All 201, exactly 1 primary | As expected | Pass |
+| 4-12 | Jobs | Role restriction | Anonymous / recruiter / admin | 401 / 403 / 403 | As expected | Pass |
+| 4-13 | Jobs | Only open jobs | GET `/api/candidate/jobs` | All open jobs, no draft or closed | As expected | Pass |
+| 4-14 | Jobs | Keyword search | `devops`, `python`, no match, `%`, `' OR 1=1 --` | Matches; injection text treated as text (0 rows) | As expected | Pass |
+| 4-15 | Jobs | Filters | Location, type, experience, combined | Same ids as the equivalent SQL | As expected | Pass |
+| 4-16 | Jobs | Invalid filters | Bad type, −1, `abc`, `status=draft`, 101 chars | 400 | As expected | Pass |
+| 4-17 | Jobs | `hasApplied` | As Aditi | True exactly for her applications | As expected | Pass |
 
 ## Stage 5 — Semantic matching (pgvector)
 
-Design: [vector-design.md](vector-design.md). Tests: `tests/unit/embeddings.test.js`, `tests/unit/recruiter-validation.test.js`, `tests/integration/matching.test.js` (production build on port 3102, real model, real database).
-```powershell
-npm run db:embed
-npm run test:unit
-npm run build
-npm run test:integration
-```
-Results recorded on 2026-10-16: unit **38 pass, 0 fail** (20 auth + 15 embeddings + 3 matches-query validation). Integration **54 pass, 0 fail** (24 auth + 17 candidate + 13 matching). No score in any test is hard-coded; the tests compare orderings and recompute cosine similarity in SQL.
-
-### Unit tests (no server, no database)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| E1 | `chunkWords`: short text; 50 words with max 20 / overlap 5 | 1 chunk; every chunk ≤ 20 tokens, next chunk starts with the previous chunk's last 5 words, no word lost | As expected | Pass |
-| E2 | Words with several word pieces; 1000 words with `maxChunks: 3`; overlap ≥ max | Never over the limit, words not split; 3 chunks + `truncated: true`; error | As expected | Pass |
-| E3 | Weighted mean of `[1,0]×3` and `[0,1]×1`; opposite vectors | Unit length, ratio 3:1; "zero vector" error | As expected | Pass |
-| E4 | `toPgVector` with 384 numbers / 3 numbers / a NaN | `[…]` literal / error / error | As expected | Pass |
-| E5 | Whitespace-only differences; job text builder | Same SHA-256; `"ML Engineer. Train models.. Required skills: PyTorch, Python."` | As expected | Pass |
-| E6 | `tryEmbedResume` with an embedder that throws | Returns `false`, no exception, 0 database queries | As expected | Pass |
-| E7 | Real model: one sentence | 384 dims, length 1 (±1e-6), model name stored, 1 chunk, 64-hex hash | As expected | Pass |
-| E8 | Real model: same text twice; ~840-word text | Dot product > 0.9999; ≥ 3 chunks, still unit length | As expected | Pass |
-| E9 | Real model: ML job vs ML sentence vs React sentence | ML pair more similar than ML–React pair | As expected | Pass |
-| Q1 | Matches query schema: `{}`; `applicantsOnly=true&limit=5`; `yes`, `0`, `51`, `2.5`, `abc`, unknown `sort` | `{false, 10}`; `{true, 5}`; all rejected | As expected | Pass |
-
-### Ranking sanity (`rank_candidates_for_job`, printed by the test)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| V1 | ML Engineer job | All ML/data candidates (Aditi, Rohan, Divya, Ishita, Farhan) above all frontend-only candidates (Sneha, Vikram) | ML/data at #1, #2, #3, #4, #9; Vikram #10 (0.2748), Sneha #12 (0.2438) | Pass |
-| V2 | Frontend Developer job | Sneha and Vikram above all five ML/data candidates | Sneha #1 (0.7552), Vikram #2 (0.7460); best ML/data candidate is Aditi at #8 (0.2619) | Pass |
-| V3 | Scores = direct `1 - (resume <=> job)` computed in SQL; sorted descending | Difference ≤ 0.00005 (rounding) for every candidate | As expected for all 12 | Pass |
-| V4 | `p_applicants_only = TRUE` | Exactly the job's applicants with an embedded primary resume, all `has_applied` | Aditi, Rohan, Divya, Aman (the 4 seeded applicants) | Pass |
-
-Full ranked lists with scores: [vector-design.md §7](vector-design.md#real-results-seeded-data).
-
-### Matches API (`GET /api/recruiter/jobs/:jobId/matches`)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| M1 | Meera (Nimbus) → Nimbus ML job, `limit=5` | 200; 5 matches identical (ids and scores) to the SQL function; model name in response | As expected | Pass |
-| M2 | Arjun (Nimbus, not the job's poster), `applicantsOnly=true` | 200; every match `hasApplied` | As expected | Pass |
-| M3 | Kavya (Kestrel) → Nimbus job | 403 `FORBIDDEN` | 403 | Pass |
-| M4 | Candidate Aditi / admin | 403 / 403 | 403 / 403 | Pass |
-| M5 | No cookie | 401 | 401 | Pass |
-| M6 | Job ids `999999999`, `abc`, `-1` | 404 | 404 ×3 | Pass |
-| M7 | `limit=0`, `limit=51`, `applicantsOnly=yes`, `sort=asc` | 400 | 400 ×4 | Pass |
-| M8 | New job inserted without embedding → embed with `embedJob` → delete job | 404 `NOT_EMBEDDED` → 200 with 3 matches → embedding row gone (cascade) | As expected | Pass |
-
-### Embedding on upload
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| U1 | Upload a .txt resume → list → delete its embedding row (simulated failure) → `embedPending()` → delete resume | 201 `isEmbedded: true`, row with model name, 1 chunk, 384 dims → list says embedded → list says `isEmbedded: false` → re-embedded → embedding row gone (cascade) | As expected | Pass |
-
-### Other Stage 5 checks
-| Check | Result |
-|---|---|
-| `npm run db:migrate` | `015_rank_candidates_for_job.sql` applied; 14 skipped |
-| `npm run db:embed` (first / second run) | 12 resumes + 8 jobs embedded in 2.0 s / 0 embedded in 0.1 s (idempotent) |
-| Stored vectors | `vector_norm = 1.000000`, `vector_dims = 384`, `model_name = sentence-transformers/all-MiniLM-L6-v2` |
-| Function input errors | `rank_candidates_for_job(999999)` → "Job 999999 does not exist"; limit 0 → "Limit must be between 1 and 100" |
-| EXPLAIN ANALYZE | Seq scan + sort on 12 rows (exact, 0.13 ms); with `enable_seqscan = off`, `Index Scan using resume_embeddings_embedding_hnsw_idx`, same top 5. Details in [vector-design.md §8](vector-design.md#8-is-the-hnsw-index-used-explain-analyze) |
-| `important_queries.sql` (now 22 queries, Q20–Q22 added) | Whole file runs with `ON_ERROR_STOP=1`, exit code 0 |
-| Test data cleanup | After the run: 12 resumes / 12 resume embeddings / 8 jobs / 8 job embeddings, 0 `@test.example` users |
-| `npm run build` | Passes; `/api/recruiter/jobs/[jobId]/matches` is dynamic (ƒ). The existing Turbopack warning from `src/lib/candidate/resumes.js:76` is unchanged |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 5-01 | Embeddings unit | Short text | `chunkWords` | 1 chunk | As expected | Pass |
+| 5-02 | Embeddings unit | Chunk limit + overlap | 50 words, max 20, overlap 5 | ≤ 20 tokens, overlapping chunks | As expected | Pass |
+| 5-03 | Embeddings unit | Word pieces | Long words | Words never split | As expected | Pass |
+| 5-04 | Embeddings unit | `maxChunks` | 1000 words, max 3 | 3 chunks, `truncated: true` | As expected | Pass |
+| 5-05 | Embeddings unit | Bad overlap | overlap ≥ max | Error | As expected | Pass |
+| 5-06 | Embeddings unit | Weighted mean | `[1,0]×3`, `[0,1]×1` | Unit length, ratio 3:1 | As expected | Pass |
+| 5-07 | Embeddings unit | Zero vector | Opposite vectors | Error | As expected | Pass |
+| 5-08 | Embeddings unit | pgvector literal | 384 / 3 numbers / NaN | Literal / error / error | As expected | Pass |
+| 5-09 | Embeddings unit | Source hash | Whitespace-only change | Same hash | As expected | Pass |
+| 5-10 | Embeddings unit | Job text | Title + description + required skills | Exact string | As expected | Pass |
+| 5-11 | Embeddings unit | Failing embedder | `tryEmbedResume` with a throwing model | Returns false, 0 queries | As expected | Pass |
+| 5-12 | Embeddings unit | Real model shape | One sentence | 384 dims, unit length, model name, hash | As expected | Pass |
+| 5-13 | Embeddings unit | Deterministic | Same text twice | Dot product > 0.9999 | As expected | Pass |
+| 5-14 | Embeddings unit | Long text | ~840 words | ≥ 3 chunks, unit length | As expected | Pass |
+| 5-15 | Embeddings unit | Semantics | ML job vs ML / React sentence | ML pair closer | As expected | Pass |
+| 5-16 | Validation unit | Matches query defaults | `{}` | `applicantsOnly false, limit 10` | As expected | Pass |
+| 5-17 | Validation unit | Parse strings | `applicantsOnly=true&limit=5` | `{true, 5}` | As expected | Pass |
+| 5-18 | Validation unit | Bad values | `yes`, 0, 51, 2.5, `abc`, `sort` | Rejected | As expected | Pass |
+| 5-19 | Ranking | ML job | `rank_candidates_for_job` | ML/data candidates above frontend-only ones | 1 Aditi 0.7819, 2 Rohan 0.6658, 3 Divya 0.5032, 4 Ishita 0.4378 … 10 Vikram 0.2748, 12 Sneha 0.2438 | Pass |
+| 5-20 | Ranking | Frontend job | Same | Frontend candidates above ML/data ones | 1 Sneha 0.7552, 2 Vikram 0.7460; best ML/data is Aditi at 8 (0.2619) | Pass |
+| 5-21 | Ranking | Scores are real cosine | Compare with `1 - (a <=> b)` in SQL | Equal (≤ 0.00005), sorted descending | As expected | Pass |
+| 5-22 | Ranking | Applicants only | `p_applicants_only = TRUE` | Exactly the job's applicants | As expected | Pass |
+| 5-23 | Matches API | Own company | Meera → Nimbus ML job, `limit=5` | 200, identical to the SQL function | As expected | Pass |
+| 5-24 | Matches API | Applicants only | Arjun, `applicantsOnly=true` | Every row `hasApplied` | As expected | Pass |
+| 5-25 | Matches API | Other company | Kavya → Nimbus job | 403 | As expected | Pass |
+| 5-26 | Matches API | Wrong roles | Candidate / admin | 403 / 403 | As expected | Pass |
+| 5-27 | Matches API | Anonymous | No cookie | 401 | As expected | Pass |
+| 5-28 | Matches API | Bad job id | `999999999`, `abc`, `-1` | 404 | As expected | Pass |
+| 5-29 | Matches API | Bad query | `limit=0`, `51`, `yes`, `sort` | 400 | As expected | Pass |
+| 5-30 | Matches API | Not embedded | Job without embedding → embed → delete | 404 `NOT_EMBEDDED` → 200 → embedding row gone | As expected | Pass |
+| 5-31 | Embedding | On upload | Upload, delete embedding, `embedPending()`, delete resume | Embedded → re-embedded → cascade | As expected | Pass |
 
 ## Stage 6 — Recruiter module and applications
 
-Tests: `tests/unit/recruiter-validation.test.js` (job and status schemas), `tests/integration/recruiter.test.js` (production build on port 3103, real database, real embedding model). New migrations: `016_compute_match_score.sql`, `017_applications_updated_at_ignore_match_score.sql`.
-```powershell
-npm run db:migrate
-npm run db:embed
-npm run test:unit
-npm run build
-npm run test:integration
-```
-Results recorded on 2026-10-16: unit **45 pass, 0 fail** (20 auth + 15 embeddings + 10 recruiter validation). Integration **74 pass, 0 fail** (24 auth + 17 candidate + 13 matching + 20 recruiter). No score is hard-coded; each one is recomputed in SQL.
-
-### Full flow
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| R1 | Meera posts an open job with 2 required + 1 nice-to-have skill | 201; company = Nimbus, recruiter = Meera, `applicant_count` 0; `job_embeddings` row (MiniLM, 384 dims) | As expected | Pass |
-| R2 | New candidate uploads a .txt resume and applies with it | 201 `applied`; `match_score` = stored value = `1 - (resume <=> job)` within 0.00005; `applicant_count` +1 (trigger) | e.g. stored 0.8106, recomputed 0.810638…; count 0 → 1 | Pass |
-| R3 | Rows written by the apply transaction | History `(NULL → applied, changed_by = candidate)`; 1 `application_submitted` notification for Meera | As expected | Pass |
-| R4 | Meera shortlists via `PATCH /api/recruiter/applications/:id` | 200; trigger-written history `applied → shortlisted`, `changed_by` Meera, note kept; candidate gets a `status_changed` notification | As expected | Pass |
-| R5 | Recruiter applicants list, My Jobs, matches API, candidate My Applications | Same score everywhere; matched `[Python]` of required `[NLP, Python]`; `applicantCount` 1, `shortlisted` 1; history `[applied, shortlisted]` | As expected | Pass |
-
-### Transaction rollback
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| T1 | `applyToJob()` with a notification whose title is blank (fails **after** the application INSERT) | Error `23514 notifications_title_not_blank_check`; 0 application rows, 0 history rows, `applicant_count` unchanged; the same application then succeeds (+1) | As expected | Pass |
-| T1-neg | Negative control: the same statements without BEGIN/ROLLBACK | Shows the half-done state the test would catch | 1 application row left, count 1 → 2 (then cleaned up) | As expected |
-
-### Invalid transitions (database-enforced)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| S1 | API `applied → offered` (skipping stages) | 409 `INVALID_TRANSITION`, message `… applied -> offered …` | As expected | Pass |
-| S2 | Reject, then `rejected → offered` by direct SQL `UPDATE`, by `update_application_status()` and by the API | SQL error `23514` "Invalid application status transition: rejected -> offered" ×2; API 409 with the DB hint "… rejected is final."; status and history count unchanged | As expected | Pass |
-
-### Permissions and application rules
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| P1 | Kavya (Kestrel) on a Nimbus job: GET, PATCH title, PATCH status, DELETE, applicants list | 403 ×5; job unchanged; not in Kavya's My Jobs | As expected | Pass |
-| P2 | Create a job with `companyId` / `recruiterId` in the body | 400 (strict schema) | 400 | Pass |
-| P3 | Same candidate applies twice | 201, then 409 `ALREADY_APPLIED` (UNIQUE constraint); count unchanged | As expected | Pass |
-| P4 | Candidate PATCHes an application status / no cookie / Kavya | 403 / 401 / 403; status still `applied` | As expected | Pass |
-| P5 | Apply to a **closed** job / a **draft** job | 409 `JOB_NOT_OPEN` / 404; count unchanged; draft job page 404 for candidates; 0 rows | As expected | Pass |
-| P6 | Apply with another candidate's resume | 404 | 404 | Pass |
-
-### Job CRUD
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| J1 | Edit title + skills; then status-only change | Re-embedded (`source_hash` changes); status change keeps the hash | As expected | Pass |
-| J2 | Description of 9 chars / `closesAt` 2020-01-01 / unknown skill id | 400 field error / 400 `jobs_closes_after_posted_check` / 400 `job_skills_skill_fkey`; nothing saved (rolled back) | As expected | Pass |
-| J3 | Delete a draft job with no applications; delete a job with applications | 200, job + embedding + skills gone (CASCADE) / 409 `JOB_HAS_APPLICATIONS` (FK `ON DELETE RESTRICT`) | As expected | Pass |
-
-### Skill gap (`job_skills EXCEPT candidate_skills`)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| G1 | Seeded Aman, ML Engineer job | have: Python (level 2 of 4, below level); missing: NLP, PyTorch | As expected | Pass |
-| G2 | Seeded Aditi, ML Engineer job | have: NLP, PyTorch, Python (all at level); missing: none | As expected | Pass |
-| G3 | have ∪ missing vs the job's required skills; API `GET /api/candidate/jobs/:id` | Exactly the required set; API returns identical lists and Aman's application (`rejected`) | As expected | Pass |
-
-### Unit tests (validation)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| V1 | `jobCreateSchema` defaults; skill defaults | draft, onsite, full_time, INR, 1 opening, 0 yrs, no salary, `[]`; `isRequired` true, `minProficiency` 3 | As expected | Pass |
-| V2 | Explicit `salaryMin: null` | Stays `null` (regression test: it was coerced to 0, found in the browser check; fails without the fix) | As expected | Pass |
-| V3 | 11 bad inputs (short description, blank title, bad status, max < min salary, 0 openings, 1.25 years, bad date, duplicate skill, level 6, `companyId`, `applicantCount`) | All rejected | As expected | Pass |
-| V4 | `jobUpdateSchema` status-only / `{}` / `recruiterId`; `applicationStatusSchema` five statuses / `hired` / `changedBy` | ok / rejected / rejected; ok / rejected / rejected | As expected | Pass |
-
-### Browser check (real headless Chrome, production build, 2026-10-16)
-A scratch script drove Chrome over the DevTools protocol, typing into the real forms, clicking, and uploading a file. 12/12 checks passed:
-Meera logs in → My Jobs with applicant counts → posts a job with Python + NLP through the form → job detail says "embedded", salary "not disclosed" → a new candidate registers, uploads a .txt resume, adds Python → job page skill gap shows **have Python (1/2), missing NLP (1/2)** → Apply → "Match score: 0.7461" → My Applications shows the score and "Application submitted" → Meera's My Jobs shows **1** applicant → Ranked applicants shows 0.7461 → shortlist with a note → history shows the note → choose **offered** → red alert "Invalid application status transition: shortlisted -> offered (application 42)" + the allowed moves → Search all candidates table (13 ranked candidates, matched/required skill chips) → Close job. The UI score 0.7461 was checked in SQL: `1 - (a <=> b)` = 0.746140…, `applicant_count` 1.
-
-**Bug found by the browser check and fixed:** an empty salary was saved as ₹0 because `z.coerce.number()` turned `null` into 0 (commit "Fix empty job salary being saved as 0 instead of NULL"; regression test V2).
-
-### Other Stage 6 checks
-| Check | Result |
-|---|---|
-| `npm run db:migrate` | 016 and 017 applied; 15 skipped |
-| `npm run db:embed` (first / second run) | 16 seeded application scores filled in / 0 (idempotent); `applications.updated_at` checksum identical before and after (migration 017) |
-| `important_queries.sql` (now 26 queries) | Whole file runs with `ON_ERROR_STOP=1`, exit code 0; Q23 shows count 3 → 4 inside the transaction, 3 after ROLLBACK; Q25 max difference 0.00004318 |
-| Test data cleanup | After the runs: 8 jobs, 16 applications, 0 `@test.example` users |
-| `npm run build` | Passes; all new API routes dynamic (ƒ), new pages partial prerender (◐). The existing Turbopack warning from `src/lib/candidate/resumes.js:76` is unchanged |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 6-01 | Validation unit | Job defaults | `jobCreateSchema` | draft, onsite, full time, INR, 1 opening, no skills | As expected | Pass |
+| 6-02 | Validation unit | Null salary | `salaryMin: null` | Stays null (regression) | As expected | Pass |
+| 6-03 | Validation unit | Skill defaults | Skills array | `isRequired` true, `minProficiency` 3 | As expected | Pass |
+| 6-04 | Validation unit | Bad job input | 11 bad inputs incl. `companyId` | Rejected | As expected | Pass |
+| 6-05 | Validation unit | Job PATCH | Status only / `{}` | OK / rejected | As expected | Pass |
+| 6-06 | Validation unit | Status values | Five statuses | Accepted (rules are in the DB) | As expected | Pass |
+| 6-07 | Validation unit | Bad status | `hired`, `changedBy` | Rejected | As expected | Pass |
+| 6-08 | Flow | Post a job | Meera POSTs with skills | 201, her company, `applicant_count` 0, embedded | As expected | Pass |
+| 6-09 | Flow | Apply | New candidate applies | `match_score` = `1 - (resume <=> job)`; count +1 | `match_score stored 0.8431, recomputed 1 - (a <=> b) = 0.8430824969361739` | Pass |
+| 6-10 | Flow | Apply side effects | Read history + notifications | `NULL → applied` row; recruiter notified | As expected | Pass |
+| 6-11 | Flow | Shortlist | PATCH status | Trigger history row with actor + note; candidate notified | As expected | Pass |
+| 6-12 | Flow | Views agree | Applicants list, My Jobs, matches, My Applications | Same score and counts everywhere | As expected | Pass |
+| 6-13 | Transaction | Apply rollback | Make the last step fail | 0 application / history rows; count unchanged | As expected | Pass |
+| 6-14 | Status rules | Skip stages | API `applied → offered` | 409 `INVALID_TRANSITION` | As expected | Pass |
+| 6-15 | Status rules | Rejected is final | `rejected → offered` by SQL, function, API | SQL 23514; API 409; nothing changed | As expected | Pass |
+| 6-16 | Permissions | Other company | Kavya on a Nimbus job (GET, PATCH, status, DELETE, list) | 403 ×5, nothing changed | As expected | Pass |
+| 6-17 | Permissions | Choose company | `companyId` / `recruiterId` in body | 400 | As expected | Pass |
+| 6-18 | Applications | Duplicate | Apply twice | 409 `ALREADY_APPLIED`; count unchanged | As expected | Pass |
+| 6-19 | Permissions | Candidate changes status | PATCH as candidate / anonymous / Kavya | 403 / 401 / 403 | As expected | Pass |
+| 6-20 | Applications | Closed / draft job | Apply | 409 `JOB_NOT_OPEN` / 404 | As expected | Pass |
+| 6-21 | Applications | Someone else's resume | Apply with it | 404 | As expected | Pass |
+| 6-22 | Jobs | Re-embedding | Edit title + skills; status only | Hash changes; then unchanged | As expected | Pass |
+| 6-23 | Jobs | Validation + DB rules | Short description; past `closesAt`; unknown skill | 400 field error / 400 with constraint name; rolled back | As expected | Pass |
+| 6-24 | Jobs | Delete | No applications / with applications | 200 (cascade) / 409 `JOB_HAS_APPLICATIONS` | As expected | Pass |
+| 6-25 | Skill gap | Aman, ML job | `EXCEPT` query | Has Python (below level); missing NLP, PyTorch | As expected | Pass |
+| 6-26 | Skill gap | Aditi, ML job | Same | All three at level; nothing missing | As expected | Pass |
+| 6-27 | Skill gap | Completeness + API | have ∪ missing; API | = required skills; API identical | As expected | Pass |
 
 ## Stage 7 — Interviews, offers and notifications
 
-Tests: `tests/unit/pipeline-validation.test.js` (request schemas), `tests/integration/pipeline.test.js` (production build on port 3104, real database). New migrations: `018_interview_offer_rules.sql`, `019_freeze_final_interviews_offers.sql`.
-```powershell
-npm run db:migrate
-npm run test:unit
-npm run build
-npm run test:integration
-```
-Results recorded on 2026-10-16: unit **58 pass, 0 fail** (45 earlier + 13 pipeline validation). Integration **102 pass, 0 fail** (74 earlier + 28 pipeline). Every "what changed" check reads the database directly, not only the API response.
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 7-01 | Validation unit | India date | `todayInIndia()` at 20:00 UTC | Next day in Asia/Kolkata | As expected | Pass |
+| 7-02 | Validation unit | Schedule defaults | Future video interview | Defaults filled | As expected | Pass |
+| 7-03 | Validation unit | Phone | No location | Allowed; `""` → null | As expected | Pass |
+| 7-04 | Validation unit | Past time | Schedule in the past | Rejected | As expected | Pass |
+| 7-05 | Validation unit | Bad schedule input | 8 cases | Rejected | As expected | Pass |
+| 7-06 | Validation unit | Update actions | reschedule / cancel / complete | Accepted | As expected | Pass |
+| 7-07 | Validation unit | Bad updates | Rating 0/6/4.5, blank feedback, past reschedule | Rejected | As expected | Pass |
+| 7-08 | Validation unit | Valid offer | Coercion, INR default | Accepted | As expected | Pass |
+| 7-09 | Validation unit | Expiry today | Offer expiring today | Accepted | As expected | Pass |
+| 7-10 | Validation unit | Bad offers | Zero salary, joining today, past expiry, … | Rejected | As expected | Pass |
+| 7-11 | Validation unit | Offer response | Only `accept` / `decline` | As described | As expected | Pass |
+| 7-12 | Validation unit | Notification PATCH | Only `isRead: true` | As described | As expected | Pass |
+| 7-13 | Validation unit | Notification list query | Parse; `userId` | Parsed; rejected | As expected | Pass |
+| 7-14 | Interviews | First interview | Schedule for a shortlisted application | 201; application `interviewed` in the same transaction; history + 2 notifications | As expected | Pass |
+| 7-15 | Interviews | Round 2 | Schedule again | `round_no` 2; status unchanged | As expected | Pass |
+| 7-16 | Interviews | Candidate view | GET `/api/candidate/interviews` | Upcoming; no rating/feedback keys | As expected | Pass |
+| 7-17 | Interviews | Reschedule, cancel, final | Reschedule, cancel, try again ×2 | 200, 200, 409 ×2; exactly 2 notifications | As expected | Pass |
+| 7-18 | Interviews | Rating range | Rating 0 / 6 by API; 6 by SQL on a past interview | 400 ×2; `interviews_rating_check` | As expected | Pass |
+| 7-19 | Interviews | Past time | API −2 h; SQL past insert and reschedule | 400; trigger errors; 0 rows | As expected | Pass |
+| 7-20 | Interviews | Location rule | Video without link; onsite without address | 400; `interviews_location_required_check` | As expected | Pass |
+| 7-21 | Interviews | Wrong stage | Schedule for an `applied` application | 409; nothing changed | As expected | Pass |
+| 7-22 | Offers | Make offer | POST offer | 201 pending; `offered` + history + 2 notifications in one transaction | As expected | Pass |
+| 7-23 | Offers | Forced rollback 1 | Second offer (UNIQUE) | 409 `OFFER_EXISTS`; nothing changed | As expected | Pass |
+| 7-24 | Offers | Forced rollback 2 | Offer row already exists | Status move, history, notification undone | As expected | Pass |
+| 7-25 | Offers | Forced rollback 3 | Blank notification title (last step) | `23514`; no offer, no history, no notification | As expected | Pass |
+| 7-26 | Offers | `offered` without offer | Function + API | Refused at COMMIT (deferred trigger); 409 | As expected | Pass |
+| 7-27 | Offers | Offer on `applied` | POST offer | 409 `INVALID_TRANSITION` | As expected | Pass |
+| 7-28 | Offers | Dates | Past expiry (API); joining today (SQL) | 400; trigger error | As expected | Pass |
+| 7-29 | Offers | Wrong responder | Other candidate; recruiter on candidate route | 404; 403; still pending | As expected | Pass |
+| 7-30 | Offers | Accept | Candidate accepts | `accepted` + `responded_at`; recruiter notified | As expected | Pass |
+| 7-31 | Offers | Respond twice | Decline after accept; accept again | 409 ×2; no second notification | As expected | Pass |
+| 7-32 | Offers | Expired | Expiry yesterday → accept; extend → decline | 409 "expired on"; then 200 declined | As expected | Pass |
+| 7-33 | Offers | Withdraw | Kavya, then Meera | 403; 200 withdrawn, application rejected, candidate notified | As expected | Pass |
+| 7-34 | Offers | Withdraw again | Withdrawn / accepted offer | 409 / 409 | As expected | Pass |
+| 7-35 | Offers | Who is told | Arjun's job, Meera's offer, accepted | Exactly Meera and Arjun notified | As expected | Pass |
+| 7-36 | Permissions | Other company | Kavya schedules, cancels, offers | 403 ×3; lists exclude them | As expected | Pass |
+| 7-37 | Permissions | Candidate | Calls recruiter actions | 403 ×4; anonymous 401; unknown 404 | As expected | Pass |
+| 7-38 | Notifications | Own list | GET | Only own ids; correct unread count; `?userId` 400 | As expected | Pass |
+| 7-39 | Notifications | Mark read | Other users, then owner | 404 ×2 unchanged; owner 200 | As expected | Pass |
+| 7-40 | Notifications | Mark all read | POST read-all | Own rows only; anonymous 401 | As expected | Pass |
 
-### Interviews
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| I1 | Meera schedules the first interview for a shortlisted application | 201, round 1 `scheduled`, application `interviewed`; trigger history row `shortlisted → interviewed`, `changed_by` Meera, note "Interview round 1 scheduled"; candidate gets `status_changed` + `interview_scheduled`; `interviewer_id` = Meera | As expected | Pass |
-| I2 | Second interview (onsite, 90 min) | round_no 2; status and history count unchanged | As expected | Pass |
-| I3 | Candidate `GET /api/candidate/interviews` | Both rounds upcoming; no `rating` / `feedback` keys; another candidate sees `[]` | As expected | Pass |
-| I4 | Reschedule, cancel, then reschedule and cancel again | 200, 200, then **409** `RULE_VIOLATION` "… is already cancelled" ×2; exactly 2 `interview_updated` notifications (no duplicate) | As expected | Pass |
-| I5 | Mark completed with rating 5 + feedback | 200, `completed`, rating 5 | As expected | Pass |
-| I6 | Rating 0 and 6 (API); `rating = 6` by direct SQL | 400 ×2; SQL `23514 interviews_rating_check`; row still `scheduled`, rating NULL | As expected | Pass |
-| I7 | Interview 2 hours in the past (API); past INSERT and past reschedule by direct SQL | 400 "Interview must be scheduled in the future"; SQL errors from `trg_interviews_guard` (insert and reschedule); 0 rows | As expected | Pass |
-| I8 | Video without a link (API); onsite without location (SQL) | 400; `interviews_location_required_check` | As expected | Pass |
-| I9 | Schedule for an `applied` application | 409 "… only … shortlisted or interviewed applications"; nothing changed (status, history, notifications, interviews) | As expected | Pass |
+## Stage 8 — Admin module and dashboard
 
-### Offers (transaction)
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| O1 | Make an offer on the interviewed application | 201 `pending` ₹22,00,000 INR; application `offered`; history `interviewed → offered` by Meera ("Offer made"); notifications +2 (`status_changed`, `offer_made`); 1 offer row | As expected | Pass |
-| O2 | **Forced rollback:** second offer for the same application | 409 `OFFER_EXISTS` (UNIQUE `offers_application_id_key`); status, history, notifications, offers all unchanged; the stored salary is still the first one | As expected | Pass |
-| O3 | **Forced rollback after the status change:** an `interviewed` application that already has an offer row | 409; the status change, its history row and its notification are rolled back (snapshot identical) | As expected | Pass |
-| O4 | **Forced rollback at the last step:** `makeOffer()` with a blank notification title | `23514 notifications_title_not_blank_check`; no offer, status `interviewed`, no history row, no notification | As expected | Pass |
-| O5 | `offered` without an offer: `update_application_status()` by SQL and the status PATCH API | SQL error at COMMIT "cannot be offered without a pending offer" (deferred trigger); API 409 `RULE_VIOLATION`; nothing changed | As expected | Pass |
-| O6 | Offer on an `applied` application | 409 `INVALID_TRANSITION` "… applied -> offered …"; nothing saved | As expected | Pass |
-| O7 | Expiry yesterday (API); joining date today (SQL) | 400; SQL "Joining date must be after today" (`trg_offers_guard`) | As expected | Pass |
-| O8 | Another candidate responds to the offer; a recruiter calls the candidate route | **404** (offer not revealed) / 403; offer still `pending`; other candidate's offer list `[]` | As expected | Pass |
-| O9 | Candidate accepts | 200 `accepted`, `responded_at` set; Meera gets `offer_responded`; application stays `offered` | As expected | Pass |
-| O10 | Decline after accepting; accept again | 409 "… already accepted" ×2; no second recruiter notification | As expected | Pass |
-| O11 | **Expired offer:** `expires_on` set to yesterday (simulating time passing), then accept | List shows `canRespond false, isExpired true`; 409 "… expired on …"; offer still `pending`, `responded_at` NULL, no notification. After extending to today, decline → 200 and the recruiter gets "Offer declined: …" | As expected | Pass |
-| O12 | Withdraw (Kavya, then Meera) | Kavya 403; Meera 200 `withdrawn`, application `offered → rejected`, candidate gets `status_changed` + `offer_withdrawn` | As expected | Pass |
-| O13 | Withdraw again; withdraw an accepted offer | 409 "… already withdrawn" (no new notification) / 409 "… already accepted" | As expected | Pass |
-| O14 | Arjun posts a job, Meera makes the offer, candidate accepts | Exactly Meera and Arjun get `offer_responded` | As expected | Pass |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 8-01 | Validation unit | Company create | Trim, `""` → NULL | As described | As expected | Pass |
+| 8-02 | Validation unit | Bad company | Blank name, `acme.example`, unknown field | Rejected | As expected | Pass |
+| 8-03 | Validation unit | Company PATCH | Partial body | Only sent fields | As expected | Pass |
+| 8-04 | Validation unit | Empty PATCH | `{}` | Rejected | As expected | Pass |
+| 8-05 | Validation unit | Recruiter create | Email case, `companyId` | Normalised, coerced | As expected | Pass |
+| 8-06 | Validation unit | Recruiter password | Same rule as registration | Enforced | As expected | Pass |
+| 8-07 | Validation unit | Recruiter bad input | `role`, bad phone, id 0 | Rejected | As expected | Pass |
+| 8-08 | Validation unit | `isActive` alone | PATCH | Accepted | As expected | Pass |
+| 8-09 | Validation unit | Bad recruiter PATCH | `"false"`, password, `{}` | Rejected | As expected | Pass |
+| 8-10 | RBAC | Anonymous | 10 admin route/method pairs | 401 ×10 | As expected | Pass |
+| 8-11 | RBAC | Recruiter + candidate | Same 10 | 403 ×20; nothing changed | As expected | Pass |
+| 8-12 | RBAC | Admin | List routes | 200 ×3 | As expected | Pass |
+| 8-13 | Companies | Create | POST | 201; empty text → NULL | As expected | Pass |
+| 8-14 | Companies | Duplicate name | POST twice | 409 `COMPANY_NAME_TAKEN` | As expected | Pass |
+| 8-15 | Companies | List / read / edit | GET, PATCH, GET | Only sent fields change | As expected | Pass |
+| 8-16 | Companies | Delete unused | DELETE | 200 | As expected | Pass |
+| 8-17 | Companies | Delete with jobs (SQL + API) | DELETE | 23503 `jobs_company_fkey`; API 409 `COMPANY_IN_USE` | As expected | Pass |
+| 8-18 | Companies | Delete with recruiter | API | 409 `recruiters_company_fkey` | As expected | Pass |
+| 8-19 | Companies | Seeded Nimbus | API DELETE | 409 "…2 recruiters and 3 jobs" | As expected | Pass |
+| 8-20 | Recruiters | Create | POST | 201; users + recruiters rows; bcrypt hash; can log in | As expected | Pass |
+| 8-21 | Recruiters | Duplicate email | POST twice | 409; 1 row | As expected | Pass |
+| 8-22 | Recruiters | Atomic (API) | Unknown company | 400; sequence advanced; 0 users rows | As expected | Pass |
+| 8-23 | Recruiters | Atomic (forced) | Hook throws after users INSERT | 0 users, 0 recruiters rows | As expected | Pass |
+| 8-24 | Recruiters | Role from body | `role: admin` | 400 | As expected | Pass |
+| 8-25 | Recruiters | Edit + move | Rename, move a recruiter without jobs | 200 | As expected | Pass |
+| 8-26 | Recruiters | Move with jobs | Move Meera | 409 `RECRUITER_OWNS_JOBS` | As expected | Pass |
+| 8-27 | Recruiters | Deactivate | `isActive: false` | Same cookie → 401; login 403 | As expected | Pass |
+| 8-28 | Recruiters | Reactivate | `isActive: true` | Old cookie → 200 | As expected | Pass |
+| 8-29 | Recruiters | Admin account | PATCH user 1 via recruiter route | 404 | As expected | Pass |
+| 8-30 | Dashboard | Totals | API vs independent SQL | Equal | `applications 18, interviews 9, offers 3, openJobs 6, candidates 12` (recruiters/companies include the test's own rows on both sides) | Pass |
+| 8-31 | Dashboard | Per stage | API vs `GROUP BY` | Equal; sum = total | As expected | Pass |
+| 8-32 | Dashboard | Top skills | API vs SQL (≥ 2 open jobs) | Equal | As expected | Pass |
+| 8-33 | Dashboard | Score by status | API vs SQL, 4 decimals | Equal | `applied=0.648 shortlisted=0.6546 interviewed=0.8053 offered=0.5408 rejected=0.5814` | Pass |
+| 8-34 | Dashboard | Per company | 9 columns + above-average flag | Equal | As expected | Pass |
+| 8-35 | Dashboard | Per job | `generate_hiring_pipeline_report()` vs `GROUP BY` | Equal | As expected | Pass |
 
-### Permissions
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| P1 | Kavya (Kestrel) schedules / cancels / makes an offer on Nimbus applications | 403 ×3; nothing changed; Kavya's interview and offer lists contain none of them; Meera's upcoming list does | As expected | Pass |
-| P2 | Candidate calls schedule, interview PATCH, make offer, recruiter interview list | 403 ×4; no cookie → 401; unknown application → 404 | As expected | Pass |
+## Stage 9 — Security, consistency fixes, demo data, clean setup
 
-### Notifications inbox
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| N1 | Candidate lists notifications | Every returned id belongs to the candidate (checked in SQL); `unreadCount` = SQL count; another candidate's list shares no ids; `?userId=1` → 400 | As expected | Pass |
-| N2 | Another candidate and a recruiter mark the candidate's notification read; then the owner | 404 ×2 and `is_read` still false; owner 200, unread count −1 | As expected | Pass |
-| N3 | Mark all as read | `updated > 0`, unread 0; another user's unread count unchanged; no session → 401 | As expected | Pass |
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 9-01 | Security | Headers on a page | GET `/login` | nosniff, `DENY`, CSP `frame-ancestors 'none'`, Referrer-Policy, Permissions-Policy; no `X-Powered-By` | As expected | Pass |
+| 9-02 | Security | Headers on a public API | GET `/api/health` | Same | As expected | Pass |
+| 9-03 | Security | Headers on an error response | GET `/api/auth/me` (401) | Same | As expected | Pass |
+| 9-04 | Security | Health leaks nothing | GET `/api/health` | Only version numbers | `"version":"17.11"`; no OS/compiler text | Pass |
+| 9-05 | Security | CSRF without Origin | Login POST with `Sec-Fetch-Site: cross-site` / `same-site` | 403 `CROSS_ORIGIN`, no cookie | As expected (before the fix: 401 from the login check, i.e. the request was processed) | Pass |
+| 9-06 | Security | CSRF with Origin | Foreign Origin; same origin; no headers | 403; 200; 200 | As expected | Pass |
+| 9-07 | Security | Cookie flags (live) | Login against `next start` | HttpOnly, SameSite, Secure, 8 h | `Path=/; Max-Age=28800; Secure; HttpOnly; SameSite=lax` | Pass |
+| 9-08 | Security | Login message (live) | Unknown email vs wrong password | Identical body | Both `{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}}` | Pass |
+| 9-09 | Security | Parameterized SQL | `grep` every `query(` with `${…}` | Only fixed column lists / whitelisted column maps | As expected ([security-review.md §2](security-review.md#2-cross-cutting-checks)) | Pass |
+| 9-10 | Secrets | `.env*` ignored | `git check-ignore -v` | Ignored; only `.env.example` tracked | `.gitignore:25:.env*` for `.env.local`, `.env`, `.env.production` | Pass |
+| 9-11 | Secrets | History | `git log --all -p -S<value>` for the 3 real values; pattern search | 0 commits | 0 / 0 / 0 commits; pattern hits are test fixtures, demo password, placeholder only | Pass |
+| 9-12 | Secrets | Dependencies | `npm install` in a clean clone | No known vulnerabilities | `found 0 vulnerabilities` | Pass |
+| 9-13 | Consistency | Reject offered → offer withdrawn (API) | Offer, then status PATCH `rejected` | Offer `withdrawn` in the same transaction; one `offer_withdrawn`; candidate cannot accept (409); 0 pending offers on rejected applications | As expected | Pass |
+| 9-14 | Consistency | Reject via SQL + rollback | `update_application_status(…, 'rejected')` inside BEGIN, ROLLBACK; then for real | Rolled back together; then withdrawn | As expected | Pass |
+| 9-15 | Consistency | Declined offer untouched | Reject an application whose offer was declined | Offer stays `declined`; no withdrawal notice | As expected | Pass |
+| 9-16 | Consistency | Complete a future interview (API) | PATCH `complete` on a round 48 h ahead; then a round 3 s ahead after it passes | 409 `RULE_VIOLATION` "…before its scheduled time", row unchanged; then 200 | As expected | Pass |
+| 9-17 | Consistency | Complete a future interview (SQL) | UPDATE to `completed`, `no_show`; move-to-past + complete in one UPDATE | 23514 ×3, row unchanged | As expected | Pass |
+| 9-18 | Negative control | Without migration 020 | Drop `trg_applications_withdraw_offer`, run pipeline tests, recreate | 9-13 and 9-14 fail | `# pass 29  # fail 2` (exactly those two) | Pass |
+| 9-19 | Negative control | Without migration 021 | Restore the 019 function, run pipeline tests, re-apply 021 | 9-16 and 9-17 fail | `# pass 30  # fail 2` (exactly those two) | Pass |
+| 9-20 | Consistency | Whole database after seed | SQL counts | 0 pending offers on rejected applications, 0 completed/no-show interviews in the future, 0 offered applications without an offer | 0 / 0 / 0 | Pass |
+| 9-21 | Demo data | Accepted + declined offers | `db:seed`; dashboard API | 1 accepted, 1 declined, 1 pending | Orbitline accepted 1 → **100%**; Kestrel declined 1 → **0%**; Nimbus pending → "awaiting reply" | Pass |
+| 9-22 | Demo data | Rebuild | `db:reset → migrate → seed → embed` | All succeed; every application scored | 21 applied; 12 resumes + 8 jobs embedded, 0 failed; `18 match score(s) filled in` | Pass |
+| 9-23 | Demo data | Scores are real | Max `abs(match_score − (1 − (resume <=> job)))` over all applications | ≤ 0.00005 (rounding to 4 decimals) | 0.0000432 | Pass |
+| 9-24 | Regression | Stage 2 T13 | Run `stage2_advanced_tests.sql` | Passes | Failed before the fix (`cannot TRUNCATE "applications" because it has pending trigger events`, also without migration 020, so it dates from 018); passes in its own transaction | Pass |
+| 9-25 | Setup | Clean clone, README only | `git clone`; `npm install`; `.env.local` from the template; `docker compose … up -d --wait`; reset; migrate; seed; embed (model downloaded fresh); `npm run build`; `npm start` and `npm run dev` | App works from a fresh checkout | health 200 (`17.11`, pgvector `0.8.7`); admin, recruiter and candidate log in; matches 200 (Aditi 0.782, Rohan 0.666, Divya 0.503); resume upload 201 and embedded (creates `uploads/`); `/`, `/login`, `/register` 200; `npm start` works without env vars in the shell. README gaps found and fixed: no `build`/`start` step, no "start over" steps, test ports 3100-3104 → 3100-3105 | Pass |
 
-### Unit tests (`tests/unit/pipeline-validation.test.js`, 13)
-| # | Test | Result |
-|---|---|---|
-| U1 | `todayInIndia()` returns the Asia/Kolkata date (20:00 UTC on 15 Oct → 16 Oct) | Pass |
-| U2 | Interview schedule: defaults; phone without location; past time rejected; 8 bad inputs (no link, onsite without address, link without http(s), mode `zoom`, 10 / 481 minutes, timestamp without offset, extra `applicationStatus`) | Pass |
-| U3 | Interview update: three actions accepted; rating 0/6/−1/4.5/"five", blank feedback, past reschedule, unknown action, `cancel` with `rating` rejected | Pass |
-| U4 | Offer: valid offer, coercion and INR default; expiry today allowed; zero salary, joining today, past expiry, expiry after joining, missing expiry, bad currency, extra `status` rejected | Pass |
-| U5 | Offer response, notification PATCH and list query schemas (only `accept`/`decline`, only `isRead: true`, no `userId`) | Pass |
+`docker compose up` was run from the project folder (same committed file; the container already existed). Running it from the clone would have recreated the existing `talentmatch-db` container with its `db/init` mount pointing into the temporary clone. The compose file in the clone was validated with `docker compose config`.
 
-### Bugs found and fixed in this stage (with evidence)
-| Bug | Found by | Fix |
-|---|---|---|
-| Withdrawing an offer twice returned 200 and notified the candidate again (same for cancelling an interview twice or accepting twice): the 018 guards only rejected a *change* of status | Integration test O13: `expected 409, actual 200` | Migration 019: completed/cancelled interviews and accepted/declined/withdrawn offers are frozen (commit "Freeze final interviews and offers (migration 019)") |
-| When a recruiter made an offer on a colleague's job, only the job poster was told the candidate accepted | Browser check: Meera's inbox never showed "accepted" (it went to Arjun, who posted the job) | Notify the poster **and** the offer maker (from the `→ offered` history row); test O14 |
+---
 
-### Browser check (real headless Chrome, production build, 2026-10-16)
-A scratch script drove Chrome over the DevTools protocol (time zone Asia/Kolkata), typing into the real forms and clicking the real buttons. **17/17 checks passed.** Setup: a fictional candidate "Nikhil Arora" registers, uploads a resume and applies to the seeded Data Analyst job (via the API, as in Stage 6). Then in the browser:
-Meera logs in → shortlists Nikhil with the status dropdown → "Schedule interview" → a past time is refused by the form ("Interview must be scheduled in the future") → tomorrow 11:00, video link → the row shows "Round 1 · Scheduled", status **Interviewed** and a "Make offer" button (DB: status `interviewed`, last history row `interviewed`, candidate notifications `status_changed, status_changed, interview_scheduled`) → Interviews page lists the seeded rounds and flags the seeded 14 Oct round "The time has passed" → mark completed 4/5 with feedback → "Make offer" ₹14,50,000, joining +45 days, respond by +10 days → row shows "Offer ₹14,50,000 · Pending", status **Offered** → choosing **offered** for Ishita (shortlisted) shows "Invalid application status transition: shortlisted -> offered" → Offers page lists the seeded Rohan offer and the new one → Nikhil logs in: inbox "5 unread", mark one read → "4 unread" → My interviews shows round 1 under Past **without** the recruiter's feedback → My offers → Accept (confirmation dialog) → "Offer accepted. The recruiter has been notified." (DB: `accepted`, `responded_at` set) → Meera's inbox shows "Nikhil Arora accepted your offer for Data Analyst." → seeded Rohan's pending offer with Accept/Decline and seeded Aditi's interviews render.
-Afterwards the script deleted the test candidate (cascade) and the recruiter notifications it created: 0 test users, Data Analyst `applicant_count` back to 3, 6 notifications (the seeded ones).
+## Not re-run in Stage 9
 
-Screenshots: `docs/screenshots/stage7/` (recruiter-schedule-interview-past-error, recruiter-interviews, recruiter-make-offer-form, recruiter-job-detail-offer, recruiter-offers, recruiter-notifications, candidate-notifications, candidate-offers-pending, candidate-offer-accepted, candidate-offers-seeded, candidate-interviews-seeded).
+These were run and recorded in earlier stages but were **not** repeated in the final run, so they are not marked Pass here.
 
-### Other Stage 7 checks
-| Check | Result |
-|---|---|
-| `npm run db:migrate` | 018 and 019 applied; 17 skipped |
-| `npm run db:seed` after 018 | Still runs (the seeded past interviews and the old offer are imported with `import_mode`) |
-| `important_queries.sql` (now 32 queries) | Whole file runs with `ON_ERROR_STOP`, exit code 0. Q27: `interviewed → offered` inside the transaction, `interviewed` and 0 offers after ROLLBACK. Q28: before `status=interviewed history=3 notifications=1`, inside `offered / 4 / 2`, after the UNIQUE error `interviewed / 3 / 1`. Q29: the deferred check fires with `SET CONSTRAINTS … IMMEDIATE` |
-| Test data cleanup | After all runs: 8 jobs, 16 applications, 7 interviews, 1 offer, 6 notifications (the seed), 0 `@test.example` users |
-| `npm run build` | Passes; 12 new API routes dynamic (ƒ), 5 new pages partial prerender (◐). Only the existing Turbopack warning (`src/lib/candidate/resumes.js:76`) |
+| ID | Check | Last run | Why not re-run |
+|---|---|---|---|
+| N-01 | `db:reset` refuses the native Postgres (5432), a non-local host, and a wrong confirmation | Stage 1 (2026-10-09) | Only the normal `--yes` path was run; the safety code (`scripts/lib/db-target.js`) did not change |
+| N-02 | Browser checks with headless Chrome: candidate (Stage 4, 9 steps), recruiter flow (Stage 6, 12 checks), interviews/offers (Stage 7, 17 checks), admin (Stage 8, 12 steps) | 2026-10-16, Stages 4–8 | The driver scripts were throw-away scratch files and are not in the repo |
+| N-03 | Stage 9 UI change: "Mark completed" is hidden until the interview time has passed | — | Build only; not clicked in a browser. The database refuses an early completion either way (9-16, 9-17) |
+| N-04 | Earlier negative controls: role guard removed (Stage 3), resume row lock removed (Stage 4), apply without a transaction (Stage 6), recruiter create without BEGIN (Stage 8) | Stages 3–8 | Those tests are unchanged and still pass; only the two new controls (9-18, 9-19) were run |
+| N-05 | EXPLAIN ANALYZE showing the HNSW index (Stage 5) | Stage 5 | Not part of the test suites |
+| N-06 | Screenshots in `docs/screenshots/stage7` and `stage8` | Stages 7–8 | Taken with the earlier seed; the dashboard now shows the new acceptance rates |
 
-## Stage 8 — Admin module, analytics dashboard, shared UI
+## Bugs found by tests, by stage
 
-Tests: `tests/unit/admin-validation.test.js` (request schemas), `tests/integration/admin.test.js` (production build on port 3103, real database). No new migrations: the admin module uses the Stage 1 foreign keys, the Stage 2 views and function, and the Stage 3 session check as they are.
-```powershell
-npm run test:unit
-npm run build
-npm run test:integration
-```
-Results recorded on 2026-10-16: unit **67 pass, 0 fail** (58 earlier + 9 admin validation). Integration **128 pass, 0 fail** (102 earlier + 26 admin). All 102 earlier integration tests passed again after the restyle of every page.
-
-### Role enforcement
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| R1 | No cookie on all 10 admin route/method pairs (dashboard; companies GET/POST, `:id` GET/PATCH/DELETE; recruiters GET/POST, `:id` GET/PATCH) | 401 ×10 | As expected | Pass |
-| R2 | Seeded recruiter and seeded candidate on the same 10 | 403 `FORBIDDEN` ×20; company 1 unchanged, user 2 still active, no `x@test.example` user created | As expected | Pass |
-| R3 | Admin on the three list routes | 200 ×3 | As expected | Pass |
-| R4 | Recruiter opens `/admin` in the browser | Redirected (server-side role check in the page) | Landed on `/recruiter` | Pass |
-
-### Companies
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| C1 | Create a company with industry, location, website, empty description | 201; empty text stored as NULL; row in DB | As expected | Pass |
-| C2 | `website: "ftp://x"`; unknown field `companyId` | 400 ×2 | As expected | Pass |
-| C3 | Same name again | 409 `COMPANY_NAME_TAKEN` (UNIQUE `companies_name_key`) | As expected | Pass |
-| C4 | List / PATCH location + clear website / GET; unknown id; id `abc` | counts 0/0/0; only sent fields change (`website` → NULL, `industry` kept); 404; 400 | As expected | Pass |
-| C5 | Delete a company with no recruiters or jobs | 200; row gone | As expected | Pass |
-| C6 | **Company with a job: direct SQL `DELETE`** | PostgreSQL error `23503` on `jobs_company_fkey` | As expected | Pass |
-| C7 | Same company through the API | 409 `COMPANY_IN_USE`, `details.constraint = jobs_company_fkey`, `jobs: 1`, message "… cannot be deleted because it still has 1 job …"; row still there | As expected | Pass |
-| C8 | Company with a recruiter through the API | 409, `recruiters_company_fkey`, `recruiters: 1` | As expected | Pass |
-| C9 | Seeded Nimbus | 409 "Nimbus Analytics Pvt Ltd cannot be deleted because it still has 2 recruiters and 3 jobs" | As expected | Pass |
-
-### Recruiter accounts
-| # | Test | Expected | Actual | Result |
-|---|---|---|---|---|
-| A1 | Create a recruiter | 201; `users.role = 'recruiter'`, hash matches `$2b$12$…` and is not the password; `recruiters` row with the company and designation; no hash in the response; the new account can log in | As expected | Pass |
-| A2 | Same email twice | 201 then 409 `EMAIL_TAKEN`; exactly 1 users row | As expected | Pass |
-| A3 | **Atomicity (API):** unknown `companyId` 999999999 | 400 with `recruiters_company_fkey`; `users_user_id_seq` advanced (proves the users INSERT ran); **0** users rows for the email | As expected | Pass |
-| A4 | **Atomicity (forced failure):** `createRecruiter()` with a hook that throws right after the users INSERT | Inside the transaction the users row is visible; after ROLLBACK **0** users rows and 0 recruiters rows | As expected | Pass |
-| A5 | Body with `role: "admin"` | 400 (strict schema) | As expected | Pass |
-| A6 | Rename, set phone, move a recruiter without jobs to another company | 200 with the new values | As expected | Pass |
-| A7 | Move seeded Meera (owns jobs) to Kestrel | 409 `RECRUITER_OWNS_JOBS`, `jobs_recruiter_fkey`; still company 1 | As expected | Pass |
-| A8 | **Deactivation:** log in, then the admin sets `isActive: false` | Before: `/api/auth/me` 200, `/api/recruiter/jobs` 200. After: `users.is_active = false`; **the same cookie** → 401 on both; login → 403 `ACCOUNT_DISABLED` with no cookie set | As expected | Pass |
-| A9 | Reactivate | `/api/auth/me` with the old cookie → 200 again | As expected | Pass |
-| A10 | PATCH user 1 (the admin) through the recruiter route | 404; admin still active | As expected | Pass |
-
-### Dashboard numbers vs independent SQL (base tables only, no views)
-| # | Check | Result |
-|---|---|---|
-| D1 | Totals: candidates 12, recruiters 4 (4 active), companies 3, open jobs 6, applications 16, interviews 7, offers 1 (seed; extra test rows are counted the same way on both sides) | Pass |
-| D2 | Stage counts applied 6, shortlisted 3, interviewed 3, offered 1, rejected 3; sum = total applications | Pass |
-| D3 | Top skills: each skill's open-job and required counts, only skills with ≥ 2 open jobs, sorted by demand (Docker 3, Python 3, NLP 2, PyTorch 2) | Pass |
-| D4 | Average match score per status to 4 decimals: applied 0.648, shortlisted 0.6546, interviewed 0.8053, offered 0.6658, rejected 0.5702 | Pass |
-| D5 | Every company: jobs, open jobs, applications, offers made / accepted / declined, acceptance rate, average rating, rated interviews; platform average 5.33; above-average flag (only Nimbus) | Pass |
-| D6 | Every job from `generate_hiring_pipeline_report()`: total and the 5 stage counts equal a `GROUP BY` on `applications` | Pass |
-
-### Unit tests (`tests/unit/admin-validation.test.js`, 9)
-| # | Test | Result |
-|---|---|---|
-| V1 | Company create: trim, `""` → NULL, missing optionals → NULL; blank name, `acme.example`, unknown field, 151-char name rejected | Pass |
-| V2 | Company PATCH keeps only sent fields (no NULL defaults); empty body rejected | Pass |
-| V3 | Recruiter create: email lower-cased, `companyId` coerced; same password rule as registration (length, letter + digit, ≤ 72 bytes); `role`, bad phone, id 0 / "abc" rejected | Pass |
-| V4 | Recruiter PATCH: `isActive` alone OK; string `"false"`, password change, empty body rejected | Pass |
-
-### Negative control (proves the atomicity test can fail)
-`BEGIN` was commented out in `createRecruiter()` and the "atomic" tests were run: **A4 failed** (the users row survived the error, because without BEGIN every statement commits on its own). A3 still passed in that run because it goes through the already-built server, which had the real code. The line was restored (`git diff` empty) and the full suite re-run green.
-
-### Bugs found and fixed in this stage (with evidence)
-| Bug | Found by | Fix |
-|---|---|---|
-| Nav content sat 32 px to the right of the page content | Desktop screenshot review | Padding moved from the inner nav container to the header, same box model as `PageShell` |
-| Companies page 790 px wide on a 390 px phone | Screenshot script's overflow check (`scrollWidth 790/390`); the culprit was the `sr-only` "Actions" header, which is absolutely positioned and escaped the scrolling table wrapper | `relative` on every table wrapper |
-| Status dropdown and note field on the recruiter job page stretched full width | Screenshot review: `inputClass` contains `w-full`, which beat the old `w-44` | New `inlineInputClass` for controls that sit in a row |
-| Table headers and "0 · 0 open" wrapped when a long email widened a column | Screenshot after creating a recruiter in the browser | `whitespace-nowrap` on headers and numeric cells |
-
-### Browser check (real headless Chrome, production build, 2026-10-16)
-A scratch script drove Chrome over the DevTools protocol, setting values in the real React forms and clicking the real buttons. All 12 scripted steps behaved as expected:
-1. Admin → Companies → Delete Nimbus → confirm → red alert "Nimbus Analytics Pvt Ltd cannot be deleted because it still has 2 recruiters and 3 jobs. Move or remove them first. Database rule: recruiters_company_fkey". The page did not crash and the row stayed.
-2. "Add company" form with every field labelled; "Browser Check Logistics" created and listed (4 rows).
-3. Recruiters → "New recruiter" → fictional "Tanvi Deshpande" for Browser Check Logistics → "Tanvi Deshpande created." and a new Active row.
-4. Deactivate → "Tanvi Deshpande deactivated. They can no longer sign in, and their current session stops working on the next request." The row turns grey and its badge says Inactive.
-5. Signed out, log in as Tanvi → "This account has been disabled".
-6. Delete Browser Check Logistics → "… still has 1 recruiter …" (`recruiters_company_fkey`).
-7. Recruiter Meera opens `/admin` → redirected to `/recruiter`.
-8. Hovering the "Rejected" bar shows the tooltip "Rejected: 3 applications (19%)".
-9. At 390 px the hamburger opens Dashboard / Companies / Recruiters; the user menu shows name, email, role, Notifications and Sign out.
-Afterwards the test recruiter and company were deleted: users 17, companies 3 (the seed).
-
-Screenshots (`docs/screenshots/stage8/`, seeded data, 1280 px desktop and 390 px mobile): admin-dashboard-desktop / -mobile / -tooltip, admin-companies-desktop / -mobile / -delete-blocked, admin-recruiters-desktop / -mobile, admin-recruiter-create-form, admin-mobile-menu, candidate-applications-desktop / -mobile, recruiter-jobs-desktop / -mobile, recruiter-job-detail-desktop. The script reported `scrollWidth == clientWidth` (no horizontal page scroll) on all 15. Wide tables scroll inside their own card instead.
-
-### Other Stage 8 checks
-| Check | Result |
-|---|---|
-| `important_queries.sql` (now 41 queries) | Whole file runs with `ON_ERROR_STOP`, exit 0. Q40: `users_inside_tx 1`, NOTICE `recruiters_company_fkey`, `users_after_rollback 0`. Q41: NOTICE "refused: … violates foreign key constraint recruiters_company_fkey" |
-| Test data cleanup | After all runs: 17 users, 3 companies, 4 recruiters, 8 jobs, 16 applications (the seed) |
-| `npm run build` | Passes; 5 new API routes dynamic (ƒ), 3 new admin pages partial prerender (◐). Only the existing Turbopack warning (`src/lib/candidate/resumes.js:76`) |
-| Dark mode | Off on purpose: `@custom-variant dark` points Tailwind's `dark:` at a class that is never set, so an OS dark setting cannot produce half-dark pages |
+| Stage | Bug | Found by | Fix |
+|---|---|---|---|
+| 4 | Every PDF upload failed in the production build (bundled pdfjs worker path) | Real-PDF integration test | `serverExternalPackages: ["pdfjs-dist"]` |
+| 4 | Two parallel first uploads could both become primary | Concurrency test 4-11 | Lock the candidate row in the upload transaction |
+| 4 | Re-adding a skill returned 201 | Test 4-05 | `RETURNING (xmax = 0)` |
+| 6 | Empty salary saved as ₹0 | Browser check | Keep `null` before coercion (test 6-02) |
+| 7 | Withdrawing / cancelling / accepting twice returned 200 and notified again | Test 7-34 | Migration 019 freezes final rows |
+| 7 | The offer maker was not told when a colleague's job offer was accepted | Browser check | Notify poster and offer maker (test 7-35) |
+| 8 | Layout bugs (nav offset, 790 px page on a phone, stretched inputs, wrapped headers) | Screenshot checks | CSS fixes |
+| 9 | Pending offer stayed attached to a rejected application | Flagged in Stage 7 | Migration 020 (tests 9-13 to 9-15) |
+| 9 | An interview could be completed before it happened | Flagged in Stage 7 | Migration 021 (tests 9-16, 9-17) |
+| 9 | No security headers; health leaked the server build; CSRF check ignored `Sec-Fetch-Site` | Live probe of `next start` | See [security-review.md §3](security-review.md#3-problems-found-and-fixed-in-stage-9) |
+| 9 | Stage 2 T13 failed since migration 018 | Re-running every SQL suite | T13 in its own transaction |
+| 9 | A failing assertion inside the new rollback test left its transaction open, so `after()` clean-up was discarded and test users stayed in the database | Negative-control run (9-18) | Always ROLLBACK in `finally` |
