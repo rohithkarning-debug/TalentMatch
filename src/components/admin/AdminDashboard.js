@@ -18,7 +18,7 @@ const KPIS = [
 ];
 
 // A table inside a card runs edge to edge (no second border) and scrolls sideways on small screens.
-const CARD_TABLE = "-mx-5 -mb-5 overflow-x-auto border-t border-slate-200 sm:-mx-6 sm:-mb-6";
+const CARD_TABLE = "relative -mx-5 -mb-5 overflow-x-auto border-t border-slate-200 sm:-mx-6 sm:-mb-6";
 
 const pct = (v) => (v == null ? "—" : `${v.toFixed(1)}%`);
 

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, dangerClass, EMPLOYMENT_LABELS, EmptyState, errorLines, formatDate, formatDateTime, formatMoney, formatSalary, formatScore, inputClass, labelClass, linkClass, PageShell, request, secondaryClass, SkeletonList, StatusBadge, StatusTimeline, tableClass, tableWrapClass, tdClass, thClass, theadClass, trClass,
+  Alert, buttonClass, cardClass, dangerClass, EMPLOYMENT_LABELS, EmptyState, errorLines, formatDate, formatDateTime, formatMoney, formatSalary, formatScore, inlineInputClass, inputClass, labelClass, linkClass, PageShell, request, secondaryClass, SkeletonList, StatusBadge, StatusTimeline, tableClass, tableWrapClass, tdClass, thClass, theadClass, trClass,
 } from "@/components/ui";
 import { MakeOfferForm, ScheduleInterviewForm } from "@/components/recruiter/PipelineForms";
 
@@ -91,11 +91,11 @@ function ApplicantRow({ app, rank, onChanged }) {
       <div className="w-full sm:w-72"><SkillMatch matched={app.matchedSkills} required={app.requiredSkills} /></div>
     </div>
     <form onSubmit={change} className="mt-3 flex flex-wrap items-end gap-2">
-      <select aria-label={`New status for ${app.fullName}`} className={`${inputClass} mt-0 w-44`} value={status} onChange={(e) => setStatus(e.target.value)}>
+      <select aria-label={`New status for ${app.fullName}`} className={`${inlineInputClass} w-full sm:w-44`} value={status} onChange={(e) => setStatus(e.target.value)}>
         <option value="">Change status…</option>
         {APPLICATION_STATUSES.filter((s) => s !== app.status).map((s) => <option key={s} value={s}>{s}</option>)}
       </select>
-      <input aria-label="Note" className={`${inputClass} mt-0 flex-1`} placeholder="Note for the history (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
+      <input aria-label="Note" className={`${inlineInputClass} min-w-0 flex-1 basis-56`} placeholder="Note for the history (optional)" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} />
       <button className={buttonClass} disabled={busy || !status}>{busy ? "Saving…" : "Update"}</button>
       <button type="button" className={secondaryClass} onClick={() => setOpen((v) => !v)}>{open ? "Hide" : "Show"} history ({app.history.length})</button>
     </form>
@@ -149,7 +149,7 @@ function SearchTab({ jobId }) {
         Every candidate's primary resume, nearest first, from <code>rank_candidates_for_job()</code> (pgvector <code>&lt;=&gt;</code>, HNSW index).
         Includes people who have not applied.
       </p>
-      <label className={`${labelClass} flex items-center gap-2`}>Show top <select className={`${inputClass} mt-0 w-20`} value={limit}
+      <label className={`${labelClass} flex items-center gap-2`}>Show top <select className={`${inlineInputClass} w-20 py-1.5`} value={limit}
         onChange={(e) => { setLimit(e.target.value); search(e.target.value); }}>{["5", "10", "20", "50"].map((n) => <option key={n}>{n}</option>)}</select></label>
     </div>
     <Alert lines={error} />

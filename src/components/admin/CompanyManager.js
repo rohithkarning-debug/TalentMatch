@@ -97,9 +97,9 @@ export default function CompanyManager() {
               <p className="text-xs text-slate-500">{c.industry || "No industry set"}{c.website && <> · <a href={c.website} target="_blank" rel="noreferrer" className="hover:underline">{c.website.replace(/^https?:\/\//, "")}</a></>}</p>
             </td>
             <td className={`${tdClass} text-slate-600`}>{c.location || "—"}</td>
-            <td className={`${tdClass} text-right tabular-nums`}>{c.recruiterCount}</td>
-            <td className={`${tdClass} text-right tabular-nums`}>{c.jobCount}<span className="text-slate-400"> · {c.openJobCount} open</span></td>
-            <td className={`${tdClass} text-right tabular-nums`}>{c.applicationCount}</td>
+            <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{c.recruiterCount}</td>
+            <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{c.jobCount}<span className="text-slate-400"> · {c.openJobCount} open</span></td>
+            <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{c.applicationCount}</td>
             <td className={`${tdClass} text-right`}>
               {confirmId === c.id
                 ? <div className="flex items-center justify-end gap-2 whitespace-nowrap">

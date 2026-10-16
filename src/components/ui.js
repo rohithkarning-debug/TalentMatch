@@ -16,6 +16,8 @@ import { useEffect, useState } from "react";
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2";
 
 export const inputClass = "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:bg-slate-50 disabled:text-slate-500";
+// Same look without "block w-full mt-1", for controls that sit in a row and set their own width.
+export const inlineInputClass = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30";
 export const buttonClass = `inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
 export const secondaryClass = `inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
 export const dangerClass = `inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
@@ -25,10 +27,10 @@ export const pageClass = "px-4 py-8 sm:px-6 lg:px-8";
 export const linkClass = `rounded font-medium text-indigo-600 hover:text-indigo-700 hover:underline ${focusRing}`;
 export const mutedLabelClass = "text-xs font-medium uppercase tracking-wide text-slate-500";
 export const sectionTitleClass = "text-base font-semibold text-slate-900";
-export const tableWrapClass = "overflow-x-auto rounded-xl border border-slate-200 bg-white";
+export const tableWrapClass = "relative overflow-x-auto rounded-xl border border-slate-200 bg-white";
 export const tableClass = "w-full min-w-[640px] text-left text-sm";
 export const theadClass = "border-b border-slate-200 bg-slate-50/60 text-xs font-medium uppercase tracking-wide text-slate-500";
-export const thClass = "px-4 py-3 font-medium first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6";
+export const thClass = "whitespace-nowrap px-4 py-3 font-medium first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6";
 export const tdClass = "px-4 py-3 align-middle first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6";
 export const trClass = "border-b border-slate-100 last:border-0 hover:bg-slate-50/60";
 
@@ -233,7 +235,7 @@ export function StatusTimeline({ history }) {
       <p className="text-sm text-slate-800">
         {h.oldStatus ? <><span className="capitalize text-slate-500">{h.oldStatus}</span> → </> : null}
         <StatusBadge status={h.newStatus} />
-        <span className="ml-2 text-xs text-slate-500">{formatDateTime(h.changedAt)}{h.changedBy ? ` · ${h.changedBy}` : ""}</span>
+        <span className="ml-2 inline-block text-xs text-slate-500">{formatDateTime(h.changedAt)}{h.changedBy ? ` · ${h.changedBy}` : ""}</span>
       </p>
       {h.note && <p className="text-xs text-slate-600">{h.note}</p>}
     </li>)}
