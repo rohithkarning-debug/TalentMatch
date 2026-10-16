@@ -130,5 +130,16 @@ export async function embedPending({ embed = embedText, query = defaultQuery, lo
       log(`job ${row.job_id}: FAILED (${err.message})`);
     }
   }
+
+  // Applications whose score is NULL only because an embedding was missing
+  // when they were submitted (or seeded) get their real score now. Existing
+  // scores are left alone: a score is a snapshot taken at application time.
+  const scored = await query(
+    `UPDATE applications a
+        SET match_score = compute_match_score(a.resume_id, a.job_id)
+      WHERE a.match_score IS NULL
+        AND compute_match_score(a.resume_id, a.job_id) IS NOT NULL`);
+  summary.applications = { scored: scored.rowCount };
+  if (scored.rowCount) log(`applications: ${scored.rowCount} match score(s) filled in`);
   return summary;
 }
