@@ -1,6 +1,6 @@
 # TalentMatch — ER Diagram
 
-This diagram is written in Mermaid `erDiagram` syntax. GitHub and VS Code (with a Mermaid extension) render it automatically. It matches `db/migrations/001–013`.
+This diagram is written in Mermaid `erDiagram` syntax. GitHub and VS Code (with a Mermaid extension) render it automatically. It matches the final schema after `db/migrations/001–022` (014–022 only add triggers, functions and CHECK rules, no new tables, columns or foreign keys). A rendered copy is in `docs/er-diagram.png`.
 
 **Notation:** `||` means exactly one, `o|` zero or one, `|{` one or more, `o{` zero or more.
 `PK` = primary key, `FK` = foreign key, `UK` = unique.
