@@ -99,17 +99,18 @@ export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { user
 
 The UI may hide buttons for convenience, but that is never the protection: every route checks on the server. No `proxy.js` (formerly middleware) is used, so authorization never depends on one.
 
-### Role permission matrix (Stage 3 endpoints)
+### Role permission matrix
 
 | Endpoint | Anonymous | Candidate | Recruiter | Admin |
 |---|---|---|---|---|
 | `POST /api/auth/register` | ✅ (creates candidate only) | ✅ | ✅ | ✅ |
 | `POST /api/auth/login` / `logout` | ✅ | ✅ | ✅ | ✅ |
 | `GET /api/auth/me` | 401 | ✅ | ✅ | ✅ |
-| `GET /api/demo/admin` | 401 | 403 | 403 | ✅ |
-| `GET /api/demo/recruiter` | 401 | 403 | ✅ | 403 |
-| `GET /api/demo/candidate` | 401 | ✅ | 403 | 403 |
-| `GET /api/demo/users/:id` | 401 | own id only | own id only | any id |
+| `/api/admin/*` (e.g. `GET /api/admin/dashboard`) | 401 | 403 | 403 | ✅ |
+| `/api/recruiter/*` (e.g. `GET /api/recruiter/jobs`) | 401 | 403 | ✅ (own company only) | 403 |
+| `/api/candidate/*` (e.g. `GET /api/candidate/profile`) | 401 | ✅ (own records only) | 403 | 403 |
+
+Stage 3 tested the guards with four demonstration routes under `/api/demo/*`. They were removed in Stage 9; the same 401/403 checks now run against the three example routes above (`tests/integration/auth.test.js`, "server-side role guards"). Every route is listed in [security-review.md](security-review.md).
 
 Admin and recruiter accounts are **never** created through public registration. The register schema is strict, so any `role` field is rejected with 400 and nothing is saved, and the SQL hard-codes `'candidate'`. Admin-managed recruiter creation comes in a later stage.
 
@@ -163,9 +164,6 @@ Always 200 `{ "ok": true }`, and clears the cookie (`Max-Age=0`).
 curl -i http://localhost:3000/api/auth/me -b "tm_session=<token>"
 ```
 200 `{ "user": { "id", "email", "fullName", "role" } }`, or 401 `UNAUTHORIZED` when there is no session or it is invalid, expired, disabled, or its role is stale.
-
-### Demo endpoints (Stage 3 only)
-`/api/demo/admin`, `/api/demo/recruiter`, `/api/demo/candidate`, `/api/demo/users/:id`. They return only the caller's safe profile, or for `users/:id` the requested safe profile. They exist to demonstrate and test the guards, and can be removed once the real modules exist.
 
 ## 7. Frontend
 
