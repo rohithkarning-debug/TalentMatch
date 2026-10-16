@@ -525,6 +525,37 @@ describe("rejecting an offered application withdraws its pending offer (trg_appl
   });
 });
 
+// Stage 9 regression (migration 022): offered -> rejected used to be allowed
+// even after the candidate had accepted the offer.
+describe("an application whose offer was accepted cannot be rejected (trg_applications_accepted_offer_guard)", () => {
+  it("status PATCH -> 409 RULE_VIOLATION; nothing changes (status, offer, history, notifications)", async () => {
+    const { applicationId } = cand.main; // accepted in "the candidate accepts" above
+    const { rows: [o] } = await db.query("SELECT offer_id::int AS id, status FROM offers WHERE application_id = $1", [applicationId]);
+    assert.equal(o.status, "accepted");
+    const beforeState = await snapshot(applicationId);
+    assert.equal(beforeState.status, "offered");
+
+    const res = await api(`/api/recruiter/applications/${applicationId}`, { method: "PATCH", cookie: meera,
+      json: { status: "rejected", note: "Changed our mind" } });
+    assert.equal(res.status, 409, res.text);
+    assert.equal(res.body.error.code, "RULE_VIOLATION");
+    assert.match(res.body.error.message, /cannot be rejected: the candidate accepted its offer/);
+    assert.deepEqual(await snapshot(applicationId), beforeState);
+    assert.equal((await db.query("SELECT status FROM offers WHERE offer_id = $1", [o.id])).rows[0].status, "accepted");
+  });
+
+  it("the database refuses it without the API too: update_application_status() and a plain UPDATE", async () => {
+    const { applicationId } = cand.main;
+    const beforeState = await snapshot(applicationId);
+    for (const sql of ["SELECT update_application_status($1, 'rejected', $2, NULL)",
+                       "UPDATE applications SET status = 'rejected' WHERE application_id = $1 AND $2::bigint IS NOT NULL"]) {
+      await assert.rejects(db.query(sql, [applicationId, meeraId]),
+        (err) => err.code === "23514" && !err.constraint && /cannot be rejected: the candidate accepted its offer/.test(err.message));
+    }
+    assert.deepEqual(await snapshot(applicationId), beforeState);
+  });
+});
+
 describe("offer response notifies the job poster and the offer maker", () => {
   it("Arjun posted the job, Meera made the offer: both are told, nobody else", async () => {
     const res = await api("/api/recruiter/jobs", { method: "POST", cookie: arjun, json: {
