@@ -6,7 +6,7 @@ import CandidateJobDetail from "@/components/candidate/CandidateJobDetail";
 export const metadata = { title: "Job · TalentMatch" };
 
 export default function CandidateJobPage({ params }) {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-4xl p-6 text-sm text-zinc-500">Loading job…</main>}><CandidateJobContent params={params} /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-4xl p-6 text-sm text-slate-500">Loading job…</main>}><CandidateJobContent params={params} /></Suspense>;
 }
 
 async function CandidateJobContent({ params }) {

@@ -6,7 +6,7 @@ import MyApplications from "@/components/candidate/MyApplications";
 export const metadata = { title: "My applications · TalentMatch" };
 
 export default function MyApplicationsPage() {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-4xl p-6 text-sm text-zinc-500">Loading applications…</main>}><MyApplicationsContent /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-4xl p-6 text-sm text-slate-500">Loading applications…</main>}><MyApplicationsContent /></Suspense>;
 }
 
 async function MyApplicationsContent() {

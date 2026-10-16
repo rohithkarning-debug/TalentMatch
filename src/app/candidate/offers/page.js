@@ -6,7 +6,7 @@ import CandidateOffers from "@/components/candidate/CandidateOffers";
 export const metadata = { title: "My offers · TalentMatch" };
 
 export default function CandidateOffersPage() {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-5xl p-6 text-sm text-zinc-500">Loading my offers…</main>}><CandidateOffersContent /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-6xl px-4 py-8 text-sm sm:px-6 lg:px-8 text-slate-500">Loading my offers…</main>}><CandidateOffersContent /></Suspense>;
 }
 
 async function CandidateOffersContent() {

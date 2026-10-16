@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, cardClass, errorLines, formatDateTime, formatScore, pageClass, request, StatusBadge, StatusTimeline } from "@/components/ui";
+import {
+  Alert, buttonClass, cardClass, EmptyState, errorLines, formatDateTime, formatScore, mutedLabelClass, PageHeader, PageShell, request, SkeletonList, StatusBadge, StatusTimeline,
+} from "@/components/ui";
 
 export default function MyApplications() {
   const [apps, setApps] = useState(null);
@@ -14,34 +16,29 @@ export default function MyApplications() {
     });
   }, []);
 
-  return <main className={pageClass}>
-    <div className="mx-auto max-w-4xl space-y-6">
-      <header>
-        <div className="flex gap-4 text-sm"><Link href="/candidate" className="text-zinc-500 hover:underline">← Candidate dashboard</Link><Link href="/candidate/jobs" className="text-zinc-500 hover:underline">Browse jobs →</Link><Link href="/candidate/interviews" className="text-zinc-500 hover:underline">Interviews</Link><Link href="/candidate/offers" className="text-zinc-500 hover:underline">Offers</Link><Link href="/notifications" className="text-zinc-500 hover:underline">Notifications</Link></div>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">My applications</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">Current status, match score and every status change, recorded by the database.</p>
-      </header>
+  return <PageShell>
+      <PageHeader title="My applications" description="Current status, match score and every status change, recorded by the database." />
       <Alert lines={error} />
-      {apps === null ? !error && <p className="text-sm text-zinc-500">Loading applications…</p>
-        : apps.length === 0 ? <p className={`${cardClass} text-sm text-zinc-500`}>You have not applied to any job yet.</p>
+      {apps === null ? !error && <SkeletonList label="Loading applications" />
+        : apps.length === 0 ? <EmptyState icon="file" title="No applications yet" message="When you apply to a job, its status and match score show up here."
+            action={<Link href="/candidate/jobs" className={buttonClass}>Browse open jobs</Link>} />
         : <ul className="space-y-3">{apps.map((a) => <li key={a.id} className={cardClass}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              <h2 className="text-base font-semibold text-slate-900">
                 <Link href={`/candidate/jobs/${a.jobId}`} className="hover:underline">{a.jobTitle}</Link> <StatusBadge status={a.status} />
               </h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">{a.company} · {a.location} · applied {formatDateTime(a.appliedAt)}{a.jobStatus !== "open" && ` · job ${a.jobStatus}`}</p>
-              <p className="text-xs text-zinc-500">Resume sent: {a.resumeFileName || "deleted"}</p>
-              {a.nextInterviewAt && <p className="mt-1 text-sm text-amber-800 dark:text-amber-300">Next interview: {formatDateTime(a.nextInterviewAt)}</p>}
-              {a.offerStatus && <p className="mt-1 text-sm text-emerald-800 dark:text-emerald-300">Offer: {a.offerStatus} · <Link href="/candidate/offers" className="underline">view offer</Link></p>}
+              <p className="text-sm text-slate-600">{a.company} · {a.location} · applied {formatDateTime(a.appliedAt)}{a.jobStatus !== "open" && ` · job ${a.jobStatus}`}</p>
+              <p className="text-xs text-slate-500">Resume sent: {a.resumeFileName || "deleted"}</p>
+              {a.nextInterviewAt && <p className="mt-1 text-sm text-purple-700">Next interview: {formatDateTime(a.nextInterviewAt)}</p>}
+              {a.offerStatus && <p className="mt-1 text-sm text-emerald-800">Offer: {a.offerStatus} · <Link href="/candidate/offers" className="underline">view offer</Link></p>}
             </div>
-            <div className="text-right">
-              <p className="font-mono text-lg text-zinc-900 dark:text-zinc-50">{formatScore(a.matchScore)}</p>
-              <p className="text-xs text-zinc-500">match score</p>
+            <div className="flex items-baseline gap-1.5 sm:block sm:text-right">
+              <p className="font-mono text-lg text-slate-900">{formatScore(a.matchScore)}</p>
+              <p className={mutedLabelClass}>match score</p>
             </div>
           </div>
           <div className="mt-4"><StatusTimeline history={a.history} /></div>
         </li>)}</ul>}
-    </div>
-  </main>;
+  </PageShell>;
 }

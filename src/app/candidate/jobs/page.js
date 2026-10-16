@@ -6,7 +6,7 @@ import JobBrowser from "@/components/candidate/JobBrowser";
 export const metadata = { title: "Browse jobs · TalentMatch" };
 
 export default function CandidateJobsPage() {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-5xl p-6 text-sm text-zinc-500">Loading jobs…</main>}><CandidateJobsContent /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-6xl px-4 py-8 text-sm sm:px-6 lg:px-8 text-slate-500">Loading jobs…</main>}><CandidateJobsContent /></Suspense>;
 }
 
 async function CandidateJobsContent() {

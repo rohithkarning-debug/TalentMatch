@@ -219,7 +219,7 @@ Joins companies → jobs → applications → offers. Jobs repeat once per appli
 
 ## 4. Important queries
 
-`db/queries/important_queries.sql` contains 26 commented queries. On 2026-10-16 the whole file ran with `ON_ERROR_STOP` (exit code 0, no errors).
+`db/queries/important_queries.sql` contains 26 commented queries (Stage 7 added Q27–Q32 and Stage 8 added Q33–Q41; see §12). On 2026-10-16 the whole file ran with `ON_ERROR_STOP` (exit code 0, no errors).
 
 | # | Concept(s) | Purpose | Rows |
 |---|---|---|---|
@@ -472,3 +472,46 @@ Reschedule, cancel and complete (`updateInterview()`) are one transaction each: 
 
 **Notifications inbox.** Every query has `WHERE user_id = <session user>`. Marking as read is `UPDATE … WHERE notification_id = $1 AND user_id = $2`, so ownership is part of the UPDATE itself. Someone else's notification matches 0 rows and gets the same **404** as a missing one. The unread count uses the partial index `notifications_unread_idx … WHERE NOT is_read` from Stage 1.
 
+
+## 12. Stage 8: admin dashboard (views and the report function in use)
+
+`GET /api/admin/dashboard` (`src/lib/admin/dashboard.js`) runs seven queries **in parallel** (`Promise.all`, each on its own pooled connection) and returns everything the `/admin` page draws. Nothing is computed in JavaScript: the page only formats numbers. Queries Q33–Q39 in `db/queries/important_queries.sql` are the same SQL.
+
+| Dashboard part | Where the numbers come from | SQL concepts |
+|---|---|---|
+| KPI cards (candidates, recruiters, companies, open jobs, applications, offers; interviews as a hint) | Q33: eight scalar subqueries in one row | scalar subquery, COUNT |
+| Applications by stage | Q34: `unnest(ARRAY[...]) WITH ORDINALITY` LEFT JOIN `applications` | **GROUP BY**, LEFT JOIN keeps 0-count stages, funnel ORDER BY |
+| Top demanded skills | Q35: `job_skills ⋈ jobs ⋈ skills` for open jobs | **GROUP BY + HAVING count(*) >= 2**, FILTER |
+| Average match score by outcome | Q36: **`candidate_application_view`** grouped by `application_status` | view, GROUP BY, `avg()` ignores NULL, `count(col)` vs `count(*)` |
+| Companies table | Q37: `companies` LEFT JOIN **`company_hiring_summary`** + two pre-aggregated derived tables (offers, interview ratings) | view, derived tables, `nullif` against ÷0, **scalar subquery** for "above average" |
+| Applications per job | Q39: **`generate_hiring_pipeline_report()`** in FROM | set-returning stored function |
+| Recruiter workload (on `/admin/recruiters`) | **`recruiter_pipeline_view`** re-aggregated with `GROUP BY recruiter_id` | view, GROUP BY, FILTER, SUM |
+
+**Why LEFT JOIN `company_hiring_summary` instead of FROM it?** The view's `HAVING count(a.application_id) > 0` (Stage 2) hides companies that have no applications yet. The admin must still see them in the table, so `companies` is the driving table and the view only fills in the totals (`coalesce(..., 0)`).
+
+**Why derived tables for offers and ratings?** Joining `offers` and `interviews` directly to the applications of a company would multiply rows (applications × interviews), the same double-counting problem the views avoid (§3). Each derived table is grouped by `company_id` first, so it joins at most one row per company.
+
+**Definitions shown on the page** (so the numbers can be defended):
+- *Offer acceptance rate* = accepted ÷ (accepted + declined). Pending and withdrawn offers have no decision, so they are excluded. With the seed data the only offer is still pending, so the column shows "awaiting reply", not a misleading 0%.
+- *Above average* = the company's applications > the average over **all** companies (including those with none): 16 ÷ 3 = 5.33, so only Nimbus (8) is marked.
+- *Average match score by outcome* uses the **current** status. Seed result: interviewed 0.805, offered 0.666, shortlisted 0.655, applied 0.648, rejected 0.570. The rejected group scores lowest, which supports the claim that semantic similarity predicts progress, but the groups have 1–6 applications each, so the page says "indicative only".
+
+**Verification.** `tests/integration/admin.test.js` recomputes every number from the **base tables** with independent SQL (no views, no function) and compares it with the API response: totals, all 5 stages, each top skill's counts, all 5 score averages (to 4 decimals), every company's 9 columns plus the above-average flag, and the stage counts of every job.
+
+## 13. Stage 8: admin transactions and foreign-key rules
+
+**Creating a recruiter account** (`createRecruiter()` in `src/lib/admin/recruiters.js`):
+```
+bcrypt hash (cost 12)                   -- before BEGIN: slow work must not hold a connection
+BEGIN
+  INSERT INTO users (…, role = 'recruiter') RETURNING user_id
+  INSERT INTO recruiters (user_id, company_id, …)   -- FK to users (user_id, role) AND companies
+COMMIT                                   -- any error -> ROLLBACK: no login without a profile
+```
+The role is a constant in the SQL; the strict zod schema rejects a `role` field in the body. Two failures are tested: an unknown company (the recruiters INSERT fails on `recruiters_company_fkey`) and an error forced right after the users INSERT through a test hook. Both leave **no** users row. Evidence that the first INSERT really ran: the identity sequence `users_user_id_seq` moved forward, because sequence values are never rolled back. Q40 shows the same in psql (`users_inside_tx 1`, `users_after_rollback 0`).
+
+**Deactivating** is one UPDATE: `users.is_active = false`. No session table is needed. `loadSessionUser()` (Stage 3) re-reads `users` on every request and returns null for an inactive account, so the recruiter's existing, correctly signed JWT gets **401** on its next request, and login answers **403 `ACCOUNT_DISABLED`**. Their jobs, interviews and history stay, because deactivation is a soft delete.
+
+**Deleting a company.** The app sends `DELETE FROM companies WHERE company_id = $1` with **no pre-check**. `recruiters_company_fkey` and `jobs_company_fkey` are `ON DELETE RESTRICT`, so PostgreSQL itself refuses (error `23503`). Only then does the app count the recruiters and jobs to build the message *"Nimbus Analytics Pvt Ltd cannot be deleted because it still has 2 recruiters and 3 jobs."* (409 `COMPANY_IN_USE`, with the constraint name). A pre-check in the app could race with a recruiter being added at the same moment; the FK cannot.
+
+**Moving a recruiter to another company** is blocked by the database while they own jobs. `jobs (recruiter_id, company_id)` is a composite FK to `recruiters (user_id, company_id)` with no ON UPDATE action, so changing `recruiters.company_id` would leave the jobs pointing at a (recruiter, company) pair that no longer exists. PostgreSQL refuses (`jobs_recruiter_fkey`), and the API returns 409 `RECRUITER_OWNS_JOBS`. A recruiter with no jobs can be moved.

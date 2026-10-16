@@ -3,8 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, dangerClass, errorLines, formatDateTime, inputClass, labelClass,
-  NotificationsLink, pageClass, request, secondaryClass, StatusBadge,
+  Alert, buttonClass, cardClass, dangerClass, EmptyState, errorLines, formatDateTime, inlineInputClass, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, sectionTitleClass, SkeletonList, StatusBadge,
 } from "@/components/ui";
 import { localInputToIso } from "@/components/recruiter/PipelineForms";
 
@@ -35,16 +34,16 @@ function InterviewCard({ iv, onChanged }) {
   return <li className={cardClass}>
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
-        <p className="font-medium text-zinc-900 dark:text-zinc-50">{iv.candidateName} · Round {iv.roundNo} <StatusBadge status={iv.status} /></p>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+        <p className="font-medium text-slate-900">{iv.candidateName} · Round {iv.roundNo} <StatusBadge status={iv.status} /></p>
+        <p className="text-sm text-slate-600">
           <Link href={`/recruiter/jobs/${iv.jobId}`} className="hover:underline">{iv.jobTitle}</Link> · application <StatusBadge status={iv.applicationStatus} />
         </p>
-        <p className="mt-1 text-sm text-zinc-800 dark:text-zinc-200">
+        <p className="mt-1 text-sm text-slate-800">
           {formatDateTime(iv.scheduledAt)} · {iv.durationMinutes} min · <span className="capitalize">{iv.mode}</span>{iv.locationOrLink && ` · ${iv.locationOrLink}`}
         </p>
-        {iv.interviewerName && <p className="text-xs text-zinc-500">Interviewer: {iv.interviewerName}</p>}
-        {iv.status === "completed" && <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">Rating <b>{iv.rating}/5</b>: {iv.feedback}</p>}
-        {iv.status === "scheduled" && !iv.isUpcoming && <p className="mt-1 text-xs text-amber-700 dark:text-amber-300">The time has passed. Mark it completed or cancel it.</p>}
+        {iv.interviewerName && <p className="text-xs text-slate-500">Interviewer: {iv.interviewerName}</p>}
+        {iv.status === "completed" && <p className="mt-2 text-sm text-slate-700">Rating <b>{iv.rating}/5</b>: {iv.feedback}</p>}
+        {iv.status === "scheduled" && !iv.isUpcoming && <p className="mt-1 text-xs text-amber-700">The time has passed. Mark it completed or cancel it.</p>}
       </div>
       {iv.status === "scheduled" && !mode && <div className="flex flex-wrap gap-2">
         <button className={secondaryClass} onClick={() => setMode("reschedule")} disabled={busy}>Reschedule</button>
@@ -59,7 +58,7 @@ function InterviewCard({ iv, onChanged }) {
     </form>}
     {mode === "complete" && <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); send({ action: "complete", rating: Number(rating), feedback }); }}>
       <label className={labelClass}>Rating (1-5)
-        <select className={`${inputClass} w-24`} value={rating} onChange={(e) => setRating(e.target.value)}>{[1, 2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>
+        <select className={`${inlineInputClass} mt-1 block w-24`} value={rating} onChange={(e) => setRating(e.target.value)}>{[1, 2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>
       <label className={labelClass}>Feedback (internal, not shown to the candidate)
         <textarea required className={inputClass} rows={3} maxLength={2000} value={feedback} onChange={(e) => setFeedback(e.target.value)} /></label>
       <div className="flex gap-2"><button className={buttonClass} disabled={busy}>Save</button><button type="button" className={secondaryClass} onClick={() => setMode(null)}>Back</button></div>
@@ -80,29 +79,20 @@ export default function RecruiterInterviews() {
   const upcoming = interviews?.filter((i) => i.isUpcoming) || [];
   const past = interviews?.filter((i) => !i.isUpcoming) || [];
 
-  return <main className={pageClass}>
-    <div className="mx-auto max-w-5xl space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Link href="/recruiter" className="text-sm text-zinc-500 hover:underline">← My jobs</Link>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Interviews</h1>
-          <p className="mt-2 text-zinc-600 dark:text-zinc-400">All interviews for your company&apos;s jobs. Schedule new rounds from a job&apos;s applicant list.</p>
-        </div>
-        <div className="flex gap-2"><Link href="/recruiter/offers" className={secondaryClass}>Offers</Link><NotificationsLink /></div>
-      </header>
+  return <PageShell>
+      <PageHeader title="Interviews" description="All interviews for your company's jobs. Schedule new rounds from a job's applicant list." />
       <Alert lines={error} />
-      {interviews === null ? !error && <p className="text-sm text-zinc-500">Loading interviews…</p> : <>
+      {interviews === null ? !error && <SkeletonList label="Loading interviews" /> : <>
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Upcoming ({upcoming.length})</h2>
-          {upcoming.length === 0 ? <p className={`${cardClass} text-sm text-zinc-500`}>No upcoming interviews.</p>
+          <h2 className={sectionTitleClass}>Upcoming ({upcoming.length})</h2>
+          {upcoming.length === 0 ? <EmptyState icon="calendar" title="No upcoming interviews" message="Schedule a round from a shortlisted applicant on the job page." />
             : <ul className="space-y-3">{upcoming.map((iv) => <InterviewCard key={iv.id} iv={iv} onChanged={load} />)}</ul>}
         </section>
         <section className="space-y-3">
-          <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Past and closed ({past.length})</h2>
-          {past.length === 0 ? <p className={`${cardClass} text-sm text-zinc-500`}>Nothing here yet.</p>
+          <h2 className={sectionTitleClass}>Past and closed ({past.length})</h2>
+          {past.length === 0 ? <EmptyState icon="calendar" title="Nothing here yet" message="Completed and cancelled interviews are listed here." />
             : <ul className="space-y-3">{past.map((iv) => <InterviewCard key={iv.id} iv={iv} onChanged={load} />)}</ul>}
         </section>
       </>}
-    </div>
-  </main>;
+  </PageShell>;
 }

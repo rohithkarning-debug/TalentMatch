@@ -2,21 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import {
+  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, EmptyState, formatSalary, inputClass, labelClass, linkClass, PageHeader, PageShell, secondaryClass, SkeletonList, StatusBadge, Tag,
+} from "@/components/ui";
 
-const inputClass = "mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
-const buttonClass = "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
-const secondaryClass = "rounded-lg border border-zinc-300 px-3 py-2 text-sm hover:bg-zinc-100 dark:border-zinc-700 dark:hover:bg-zinc-800";
-const labelClass = "block text-sm font-medium text-zinc-800 dark:text-zinc-200";
-
-const EMPLOYMENT_LABELS = { full_time: "Full time", part_time: "Part time", contract: "Contract", internship: "Internship" };
 const EMPTY_FILTERS = { q: "", location: "", employmentType: "", experience: "" };
-
-function formatSalary(job) {
-  if (job.salaryMin == null && job.salaryMax == null) return "Salary not disclosed";
-  const lakh = (v) => `${(v / 100000).toLocaleString("en-IN", { maximumFractionDigits: 1 })} L`;
-  const range = [job.salaryMin, job.salaryMax].filter((v) => v != null).map(lakh).join(" – ");
-  return `${job.currency === "INR" ? "₹" : `${job.currency} `}${range} per year`;
-}
 
 export default function JobBrowser() {
   const [filters, setFilters] = useState(EMPTY_FILTERS);
@@ -44,15 +34,10 @@ export default function JobBrowser() {
   const submit = (e) => { e.preventDefault(); search(filters); };
   const clear = () => { setFilters(EMPTY_FILTERS); search(EMPTY_FILTERS); };
 
-  return <main className="min-h-screen bg-zinc-50 px-4 py-8 dark:bg-black sm:px-6 lg:px-8">
-    <div className="mx-auto max-w-5xl space-y-6">
-      <header>
-        <Link href="/candidate" className="text-sm text-zinc-500 hover:underline">← Candidate dashboard</Link>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Browse open jobs</h1>
-        <p className="mt-2 text-zinc-600 dark:text-zinc-400">Only jobs that are currently open are listed.</p>
-      </header>
+  return <PageShell>
+      <PageHeader title="Browse open jobs" description="Only jobs that are currently open are listed. Open a job to see your skill gap before applying." />
 
-      <form onSubmit={submit} className="grid items-end gap-3 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950 sm:grid-cols-2 lg:grid-cols-5">
+      <form onSubmit={submit} role="search" className={`${cardClass} grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-5`}>
         <label className={`${labelClass} lg:col-span-2`}>Keyword<input className={inputClass} type="search" value={filters.q} onChange={update("q")} maxLength={100} placeholder="Title, skill, company…" /></label>
         <label className={labelClass}>Location<select className={inputClass} value={filters.location} onChange={update("location")}><option value="">Any location</option>{locations.map((l) => <option key={l} value={l}>{l}</option>)}</select></label>
         <label className={labelClass}>Employment type<select className={inputClass} value={filters.employmentType} onChange={update("employmentType")}><option value="">Any type</option>{Object.entries(EMPLOYMENT_LABELS).map(([v, t]) => <option key={v} value={v}>{t}</option>)}</select></label>
@@ -63,27 +48,26 @@ export default function JobBrowser() {
         </div>
       </form>
 
-      {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{error}</div>}
+      <Alert lines={error ? [error] : null} />
 
-      {jobs === null ? <p className="text-sm text-zinc-500">Loading jobs…</p> : <>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400" aria-live="polite">{jobs.length} open {jobs.length === 1 ? "job" : "jobs"} found</p>
+      {jobs === null ? !error && <SkeletonList label="Loading jobs" /> : jobs && <>
+        <p className="text-sm text-slate-600" aria-live="polite">{jobs.length} open {jobs.length === 1 ? "job" : "jobs"} found</p>
         <div className="space-y-3">
-          {jobs.length === 0 && <p className="rounded-xl border border-zinc-200 p-5 text-sm text-zinc-500 dark:border-zinc-800">No open jobs match these filters.</p>}
-          {jobs.map((job) => <article key={job.id} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+          {jobs.length === 0 && <EmptyState icon="search" title="No open jobs match these filters" message="Try a different keyword or clear the filters." action={<button type="button" className={secondaryClass} onClick={clear}>Clear filters</button>} />}
+          {jobs.map((job) => <article key={job.id} className={`${cardClass} transition-colors hover:border-slate-300`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50"><Link href={`/candidate/jobs/${job.id}`} className="hover:underline">{job.title}</Link></h2>
-                <p className="text-sm text-zinc-600 dark:text-zinc-400">{job.company} · {job.location} · <span className="capitalize">{job.workMode}</span></p>
+                <h2 className="text-base font-semibold text-slate-900"><Link href={`/candidate/jobs/${job.id}`} className="hover:underline">{job.title}</Link></h2>
+                <p className="text-sm text-slate-600">{job.company} · {job.location} · <span className="capitalize">{job.workMode}</span></p>
               </div>
-              {job.hasApplied && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Applied</span>}
+              {job.hasApplied && <StatusBadge status="applied" />}
             </div>
-            <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years experience · {formatSalary(job)}{job.closesAt && ` · closes ${new Date(job.closesAt).toLocaleDateString()}`}</p>
-            <p className="mt-3 line-clamp-3 text-sm text-zinc-600 dark:text-zinc-400">{job.description}</p>
-            {job.skills.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{job.skills.map((s) => <span key={s} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">{s}</span>)}</div>}
-            <Link href={`/candidate/jobs/${job.id}`} className="mt-3 inline-block text-sm font-medium text-zinc-900 underline dark:text-zinc-100">{job.hasApplied ? "View application" : "View skill gap and apply"} →</Link>
+            <p className="mt-2 text-sm text-slate-700">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years experience · {formatSalary(job)}{job.closesAt && ` · closes ${new Date(job.closesAt).toLocaleDateString()}`}</p>
+            <p className="mt-3 line-clamp-3 text-sm text-slate-600">{job.description}</p>
+            {job.skills.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{job.skills.map((s) => <Tag key={s}>{s}</Tag>)}</div>}
+            <Link href={`/candidate/jobs/${job.id}`} className={`${linkClass} mt-3 inline-block text-sm`}>{job.hasApplied ? "View application" : "View skill gap and apply"} →</Link>
           </article>)}
         </div>
       </>}
-    </div>
-  </main>;
+  </PageShell>;
 }

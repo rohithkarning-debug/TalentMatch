@@ -1,21 +1,24 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Suspense } from "react";
-import LogoutButton from "@/components/auth/LogoutButton";
+import { HOME_FOR_ROLE } from "@/lib/roles";
 import { getCurrentUser } from "@/lib/auth/session";
 
-// Minimal landing page (Stage 3). Role dashboards come in later stages.
+// Landing page. Signed-in users go straight to their role's home page.
 export default function Home() {
   return (
-    <main className="flex flex-1 items-center justify-center bg-zinc-50 px-4 py-16 dark:bg-black">
-      <div className="w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white p-10 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">TalentMatch</h1>
-        <p className="mt-3 text-zinc-600 dark:text-zinc-400">
-          AI-assisted resume-to-job matching and recruitment management.
+    <main className="flex flex-1 items-center justify-center px-4 py-16">
+      <div className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-8 sm:p-10">
+        <p className="text-xs font-medium uppercase tracking-wide text-indigo-600">Recruitment, matched by meaning</p>
+        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-900">TalentMatch</h1>
+        <p className="mt-3 text-slate-600">
+          AI-assisted resume-to-job matching and recruitment management. Resumes and jobs are embedded with a
+          sentence-transformer model and ranked by cosine similarity in PostgreSQL (pgvector).
         </p>
         <div className="mt-8">
           {/* Reading the session cookie is request-time data, so it must sit
               behind a Suspense boundary (Cache Components). */}
-          <Suspense fallback={<p className="text-sm text-zinc-500">Checking your session…</p>}>
+          <Suspense fallback={<p className="text-sm text-slate-500">Checking your session…</p>}>
             <SessionPanel />
           </Suspense>
         </div>
@@ -26,43 +29,16 @@ export default function Home() {
 
 async function SessionPanel() {
   const user = await getCurrentUser();
-
-  if (!user) {
-    return (
-      <div className="flex flex-wrap gap-3">
-        <Link href="/login" className="rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
-          Sign in
-        </Link>
-        <Link href="/register" className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-900">
-          Create candidate account
-        </Link>
-      </div>
-    );
-  }
+  if (user) redirect(HOME_FOR_ROLE[user.role] || "/notifications");
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl bg-zinc-50 p-4 dark:bg-zinc-900">
-      <div>
-        <p className="text-sm text-zinc-500">Signed in as</p>
-        <p className="font-medium text-zinc-900 dark:text-zinc-50">{user.fullName}</p>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          {user.email} · <span className="capitalize">{user.role}</span>
-        </p>
-        {user.role === "candidate" && (
-          <Link href="/candidate" className="mt-3 inline-flex rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
-            Open candidate dashboard →
-          </Link>
-        )}
-        {user.role === "recruiter" && (
-          <Link href="/recruiter" className="mt-3 inline-flex rounded-lg bg-zinc-900 px-3 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900">
-            Open my jobs →
-          </Link>
-        )}
-        <Link href="/notifications" className="ml-2 mt-3 inline-flex rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800">
-          Notifications
-        </Link>
-      </div>
-      <LogoutButton />
+    <div className="flex flex-wrap gap-3">
+      <Link href="/login" className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
+        Sign in
+      </Link>
+      <Link href="/register" className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2">
+        Create candidate account
+      </Link>
     </div>
   );
 }

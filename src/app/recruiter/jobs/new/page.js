@@ -6,7 +6,7 @@ import JobForm from "@/components/recruiter/JobForm";
 export const metadata = { title: "Post a job · TalentMatch" };
 
 export default function NewJobPage() {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-3xl p-6 text-sm text-zinc-500">Loading…</main>}><NewJobContent /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-3xl p-6 text-sm text-slate-500">Loading…</main>}><NewJobContent /></Suspense>;
 }
 
 async function NewJobContent() {
