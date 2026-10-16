@@ -30,3 +30,6 @@ npm-debug.log*
 
 # vercel
 .vercel
+
+# downloaded embedding model files (npm run db:embed)
+/.cache/
