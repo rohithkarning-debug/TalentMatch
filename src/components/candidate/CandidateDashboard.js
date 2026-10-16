@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, buttonClass, Card, Icon, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, SkeletonList } from "@/components/ui";
+import { Alert, buttonClass, Card, formatDate, Icon, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, SkeletonList } from "@/components/ui";
 
 function Section({ title, description, children }) {
   return <Card title={title} description={description}>{children}</Card>;
@@ -140,7 +140,7 @@ export default function CandidateDashboard() {
             <label className={`${labelClass} flex-1`}>Choose resume<input className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:text-indigo-700 file:px-3 file:py-1.5`} type="file" accept=".pdf,.txt,application/pdf,text/plain" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} required /></label>
             <button className={buttonClass} disabled={busy || !selectedFile}>Upload resume</button>
           </form>
-          <div className="mt-5 space-y-2">{resumes.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">No resumes uploaded yet. Upload one to apply and get a match score.</p> : resumes.map((r) => <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"><div className="min-w-0"><p className="break-all font-medium text-slate-900">{r.fileName} {r.isPrimary && <span className="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Primary</span>}</p><p className="text-sm text-slate-600">{r.mimeType} · {r.fileSizeBytes ? `${(r.fileSizeBytes / 1024).toFixed(1)} KB` : "seeded text-only resume"} · {new Date(r.uploadedAt).toLocaleDateString()}</p></div><div className="flex gap-2">{!r.isPrimary && <button className={secondaryClass} disabled={busy} onClick={() => makePrimary(r.id)}>Set as primary</button>}<button className={secondaryClass} disabled={busy} onClick={() => deleteResume(r.id)}>Delete</button></div></div>)}</div>
+          <div className="mt-5 space-y-2">{resumes.length === 0 ? <p className="rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center text-sm text-slate-500">No resumes uploaded yet. Upload one to apply and get a match score.</p> : resumes.map((r) => <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-3"><div className="min-w-0"><p className="break-all font-medium text-slate-900">{r.fileName} {r.isPrimary && <span className="ml-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-inset ring-emerald-200">Primary</span>}</p><p className="text-sm text-slate-600">{r.mimeType} · {r.fileSizeBytes ? `${(r.fileSizeBytes / 1024).toFixed(1)} KB` : "seeded text-only resume"} · {formatDate(r.uploadedAt)}</p></div><div className="flex gap-2">{!r.isPrimary && <button className={secondaryClass} disabled={busy} onClick={() => makePrimary(r.id)}>Set as primary</button>}<button className={secondaryClass} disabled={busy} onClick={() => deleteResume(r.id)}>Delete</button></div></div>)}</div>
         </Section>
       </>}
       <p className="pb-4 text-xs text-slate-500">Resume files are private and are not served from a public URL.</p>

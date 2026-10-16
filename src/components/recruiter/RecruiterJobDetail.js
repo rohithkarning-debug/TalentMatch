@@ -214,7 +214,7 @@ export default function RecruiterJobDetail({ jobId }) {
               <p className="mt-1 text-sm text-slate-600">{job.company} · {job.location} · <span className="capitalize">{job.workMode}</span> · {EMPLOYMENT_LABELS[job.employmentType]} · {formatSalary(job)}</p>
               <p className="mt-1 text-xs text-slate-500">
                 {job.applicantCount} applicant{job.applicantCount === 1 ? "" : "s"} · {job.minExperienceYears}+ yrs · {job.openings} opening{job.openings === 1 ? "" : "s"}
-                {job.closesAt && ` · closes ${job.closesAt}`} · {job.isEmbedded ? `embedded ${formatDateTime(job.embeddedAt)}` : "not embedded yet"}
+                {job.closesAt && ` · closes ${formatDate(job.closesAt)}`} · {job.isEmbedded ? `embedded ${formatDateTime(job.embeddedAt)}` : "not embedded yet"}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">

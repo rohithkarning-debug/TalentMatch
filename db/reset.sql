@@ -29,7 +29,8 @@ DROP TABLE IF EXISTS recruiters                 CASCADE;
 DROP TABLE IF EXISTS companies                  CASCADE;
 DROP TABLE IF EXISTS users                      CASCADE;
 
--- Stored and trigger functions (migrations 010–012, 015, 016, 018–020, 022)
+-- Stored and trigger functions (migrations 010–012, 015, 016, 018–020, 022, 023)
+DROP FUNCTION IF EXISTS guard_offer_while_interview_scheduled();
 DROP FUNCTION IF EXISTS guard_reject_after_accepted_offer();
 DROP FUNCTION IF EXISTS withdraw_pending_offer_on_reject();
 DROP FUNCTION IF EXISTS check_application_stage_records();

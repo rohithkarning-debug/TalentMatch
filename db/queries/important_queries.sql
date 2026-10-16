@@ -440,13 +440,19 @@ SELECT u.full_name, a.status, a.match_score,
 -- DEMONSTRATES: explicit transaction, row lock SELECT ... FOR UPDATE, a stored
 --               function call inside the transaction (update_application_status),
 --               triggers firing inside it (transition guard, status history,
---               trg_offers_guard), INSERT ... RETURNING, ROLLBACK.
--- RETURNS: Sneha's Frontend application (seeded: interviewed) moved to
---          'offered', the new offer, the trigger's history row and the
---          notifications, all as seen INSIDE the transaction; then the state
---          after ROLLBACK (unchanged).
+--               trg_offers_guard, trg_offers_interview_guard),
+--               INSERT ... RETURNING, ROLLBACK.
+-- RETURNS: Sneha's Frontend application (seeded: interviewed, round 2 still
+--          scheduled) moved to 'offered', the new offer, the trigger's
+--          history row and the notifications, all as seen INSIDE the
+--          transaction; then the state after ROLLBACK (unchanged, round 2
+--          scheduled again).
 -- WHY: POST /api/recruiter/applications/:id/offer. The app ends with COMMIT
 --      (where the deferred trg_applications_stage_records also runs).
+--      Since migration 023 no offer can be made while a round is still
+--      scheduled, so the recruiter first cancels round 2 (in the app: the
+--      Cancel button on /recruiter/interviews); here that happens inside the
+--      same rolled-back transaction.
 BEGIN;
 SELECT a.application_id, a.status AS status_before
   FROM applications a
@@ -454,6 +460,11 @@ SELECT a.application_id, a.status AS status_before
   JOIN jobs j  ON j.job_id = a.job_id
  WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)'
    FOR UPDATE OF a;                                 -- one recruiter at a time
+UPDATE interviews i SET status = 'cancelled'        -- trg_offers_interview_guard would refuse the offer otherwise
+  FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
+ WHERE i.application_id = a.application_id AND i.status = 'scheduled'
+   AND u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)'
+RETURNING i.round_no, i.status AS interview_status_inside_txn;
 SELECT application_id, status AS status_inside_txn
   FROM update_application_status(
          (SELECT a.application_id FROM applications a JOIN users u ON u.user_id = a.candidate_id
@@ -483,7 +494,9 @@ SELECT h.old_status, h.new_status, cu.full_name AS changed_by, h.note,
  ORDER BY h.history_id DESC LIMIT 1;
 ROLLBACK;                                           -- the app runs COMMIT here
 SELECT a.status AS status_after_rollback,
-       (SELECT count(*) FROM offers o WHERE o.application_id = a.application_id) AS offers
+       (SELECT count(*) FROM offers o WHERE o.application_id = a.application_id) AS offers,
+       (SELECT count(*) FROM interviews i
+         WHERE i.application_id = a.application_id AND i.status = 'scheduled') AS scheduled_rounds
   FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
  WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)';
 
@@ -495,8 +508,14 @@ SELECT a.status AS status_after_rollback,
 -- RETURNS: NOTICE lines with counts before, inside (after the status change)
 --          and after the failure; "after" equals "before".
 -- WHY: the rollback tests in tests/integration/pipeline.test.js. The outer
---      ROLLBACK also removes the "colleague's offer" set up for the demo.
+--      ROLLBACK also removes the "colleague's offer" set up for the demo and
+--      restores Sneha's round 2, which is cancelled first because of the
+--      migration 023 rule (no offer while a round is still scheduled).
 BEGIN;
+UPDATE interviews i SET status = 'cancelled'
+  FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
+ WHERE i.application_id = a.application_id AND i.status = 'scheduled'
+   AND u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)';
 INSERT INTO offers (application_id, salary_offered, joining_date, expires_on)   -- a colleague's offer, committed first
 SELECT a.application_id, 1700000, local_today() + 30, local_today() + 7
   FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
