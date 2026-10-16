@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, formatDateTime, formatSalary, formatScore, inputClass, labelClass, linkClass, PageShell, request, sectionTitleClass, SkeletonList, StatusBadge,
+  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, formatDate, formatDateTime, formatSalary, formatScore, inputClass, labelClass, linkClass, PageShell, request, sectionTitleClass, SkeletonList, StatusBadge,
 } from "@/components/ui";
 
 // Required skills the candidate has vs is missing (computed in SQL with
@@ -79,7 +79,7 @@ export default function CandidateJobDetail({ jobId }) {
         <article className={cardClass}>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{job.title} {job.status !== "open" && <StatusBadge status={job.status} />}</h1>
           <p className="mt-1 text-sm text-slate-600">{job.company}{job.industry && ` (${job.industry})`} · {job.location} · <span className="capitalize">{job.workMode}</span></p>
-          <p className="mt-2 text-sm text-slate-700">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years · {formatSalary(job)} · {job.openings} opening{job.openings === 1 ? "" : "s"}{job.closesAt && ` · closes ${job.closesAt}`}</p>
+          <p className="mt-2 text-sm text-slate-700">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years · {formatSalary(job)} · {job.openings} opening{job.openings === 1 ? "" : "s"}{job.closesAt && ` · closes ${formatDate(job.closesAt)}`}</p>
           <p className="mt-4 whitespace-pre-line text-sm text-slate-700">{job.description}</p>
           {job.skills.some((s) => !s.isRequired) && <p className="mt-3 text-xs text-slate-500">Nice to have: {job.skills.filter((s) => !s.isRequired).map((s) => s.name).join(", ")}</p>}
         </article>

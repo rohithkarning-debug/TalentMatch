@@ -1,6 +1,7 @@
 import { ApiError, forbidden, notFound } from "./api/api-error.js";
 import { toBusinessRuleError } from "./api/db-rules.js";
 import { getPool } from "./db.js";
+import { formatDate } from "./format-date.js";
 import { assertApplicationInRecruiterCompany } from "./recruiter/jobs.js";
 
 // Offer actions: make (recruiter), accept / decline (candidate), withdraw
@@ -21,7 +22,7 @@ const formatMoney = (amount, currency) =>
 export function defaultOfferNotification({ jobTitle, company, salary, joiningDate, expiresOn }) {
   return {
     title: `Offer received: ${jobTitle}`.slice(0, 150),
-    message: `${company} has offered you the ${jobTitle} role at ${salary} per year, joining on ${joiningDate}. Please respond by ${expiresOn}.`,
+    message: `${company} has offered you the ${jobTitle} role at ${salary} per year, joining on ${formatDate(joiningDate)}. Please respond by ${formatDate(expiresOn)}.`,
   };
 }
 
