@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, NotificationsLink, pageClass, request, secondaryClass, StatusBadge } from "@/components/ui";
+import {
+  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, EmptyState, errorLines, Icon, mutedLabelClass, PageHeader, PageShell, request, SkeletonList, StatusBadge, Tag,
+} from "@/components/ui";
 
 const STAGES = ["applied", "shortlisted", "interviewed", "offered", "rejected"];
 
@@ -17,47 +19,35 @@ export default function RecruiterJobs() {
     });
   }, []);
 
-  return <main className={pageClass}>
-    <div className="mx-auto max-w-5xl space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <Link href="/" className="text-sm text-zinc-500 hover:underline">← TalentMatch home</Link>
-          <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">My jobs</h1>
-          <p className="mt-2 text-zinc-600 dark:text-zinc-400">All job postings of your company. Applicant counts are maintained by a database trigger.</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/recruiter/interviews" className={secondaryClass}>Interviews</Link>
-          <Link href="/recruiter/offers" className={secondaryClass}>Offers</Link>
-          <NotificationsLink />
-          <Link href="/recruiter/jobs/new" className={buttonClass}>+ Post a job</Link>
-        </div>
-      </header>
+  return <PageShell>
+      <PageHeader title="My jobs" description="All job postings of your company. Applicant counts are maintained by a database trigger."
+        actions={<Link href="/recruiter/jobs/new" className={buttonClass}><Icon name="plus" className="h-4 w-4" />Post a job</Link>} />
       <Alert lines={error} />
-      {jobs === null ? !error && <p className="text-sm text-zinc-500">Loading jobs…</p> : <div className="space-y-3">
-        {jobs.length === 0 && <p className={`${cardClass} text-sm text-zinc-500`}>No jobs yet. Post your first job.</p>}
-        {jobs.map((job) => <article key={job.id} className={cardClass}>
+      {jobs === null ? !error && <SkeletonList label="Loading jobs" /> : <div className="space-y-3">
+        {jobs.length === 0 && <EmptyState icon="briefcase" title="No jobs yet" message="Post your first job to start receiving ranked applicants."
+          action={<Link href="/recruiter/jobs/new" className={buttonClass}>Post a job</Link>} />}
+        {jobs.map((job) => <article key={job.id} className={`${cardClass} transition-colors hover:border-slate-300`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+              <h2 className="text-base font-semibold text-slate-900">
                 <Link href={`/recruiter/jobs/${job.id}`} className="hover:underline">{job.title}</Link> <StatusBadge status={job.status} />
               </h2>
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              <p className="text-sm text-slate-600">
                 {job.location} · <span className="capitalize">{job.workMode}</span> · {EMPLOYMENT_LABELS[job.employmentType]} · {job.openings} opening{job.openings === 1 ? "" : "s"}
                 {job.postedBy && ` · posted by ${job.postedBy}`}
               </p>
             </div>
-            <div className="text-right">
-              <p className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50" title="jobs.applicant_count (trigger-maintained)">{job.applicantCount}</p>
-              <p className="text-xs text-zinc-500">applicant{job.applicantCount === 1 ? "" : "s"}</p>
+            <div className="flex items-baseline gap-1.5 sm:block sm:text-right">
+              <p className="text-2xl font-semibold text-slate-900" title="jobs.applicant_count (trigger-maintained)">{job.applicantCount}</p>
+              <p className={mutedLabelClass}>applicant{job.applicantCount === 1 ? "" : "s"}</p>
             </div>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2 text-xs text-zinc-600 dark:text-zinc-400">
-            {STAGES.map((s) => <span key={s} className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800"><span className="capitalize">{s}</span> {job[s]}</span>)}
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 dark:bg-zinc-800">avg match {job.avgMatchScore == null ? "—" : job.avgMatchScore.toFixed(4)}</span>
-            {!job.isEmbedded && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800 dark:bg-amber-950 dark:text-amber-200">not embedded</span>}
+          <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-600">
+            {STAGES.map((s) => <span key={s} className="inline-flex items-center gap-1"><StatusBadge status={s} /><span className="tabular-nums">{job[s]}</span></span>)}
+            <Tag>avg match {job.avgMatchScore == null ? "—" : job.avgMatchScore.toFixed(4)}</Tag>
+            {!job.isEmbedded && <Tag className="bg-amber-50 text-amber-800">not embedded</Tag>}
           </div>
         </article>)}
       </div>}
-    </div>
-  </main>;
+  </PageShell>;
 }

@@ -439,3 +439,100 @@ Screenshots: `docs/screenshots/stage7/` (recruiter-schedule-interview-past-error
 | `important_queries.sql` (now 32 queries) | Whole file runs with `ON_ERROR_STOP`, exit code 0. Q27: `interviewed → offered` inside the transaction, `interviewed` and 0 offers after ROLLBACK. Q28: before `status=interviewed history=3 notifications=1`, inside `offered / 4 / 2`, after the UNIQUE error `interviewed / 3 / 1`. Q29: the deferred check fires with `SET CONSTRAINTS … IMMEDIATE` |
 | Test data cleanup | After all runs: 8 jobs, 16 applications, 7 interviews, 1 offer, 6 notifications (the seed), 0 `@test.example` users |
 | `npm run build` | Passes; 12 new API routes dynamic (ƒ), 5 new pages partial prerender (◐). Only the existing Turbopack warning (`src/lib/candidate/resumes.js:76`) |
+
+## Stage 8 — Admin module, analytics dashboard, shared UI
+
+Tests: `tests/unit/admin-validation.test.js` (request schemas), `tests/integration/admin.test.js` (production build on port 3103, real database). No new migrations: the admin module uses the Stage 1 foreign keys, the Stage 2 views and function, and the Stage 3 session check as they are.
+```powershell
+npm run test:unit
+npm run build
+npm run test:integration
+```
+Results recorded on 2026-10-16: unit **67 pass, 0 fail** (58 earlier + 9 admin validation). Integration **128 pass, 0 fail** (102 earlier + 26 admin). All 102 earlier integration tests passed again after the restyle of every page.
+
+### Role enforcement
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| R1 | No cookie on all 10 admin route/method pairs (dashboard; companies GET/POST, `:id` GET/PATCH/DELETE; recruiters GET/POST, `:id` GET/PATCH) | 401 ×10 | As expected | Pass |
+| R2 | Seeded recruiter and seeded candidate on the same 10 | 403 `FORBIDDEN` ×20; company 1 unchanged, user 2 still active, no `x@test.example` user created | As expected | Pass |
+| R3 | Admin on the three list routes | 200 ×3 | As expected | Pass |
+| R4 | Recruiter opens `/admin` in the browser | Redirected (server-side role check in the page) | Landed on `/recruiter` | Pass |
+
+### Companies
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| C1 | Create a company with industry, location, website, empty description | 201; empty text stored as NULL; row in DB | As expected | Pass |
+| C2 | `website: "ftp://x"`; unknown field `companyId` | 400 ×2 | As expected | Pass |
+| C3 | Same name again | 409 `COMPANY_NAME_TAKEN` (UNIQUE `companies_name_key`) | As expected | Pass |
+| C4 | List / PATCH location + clear website / GET; unknown id; id `abc` | counts 0/0/0; only sent fields change (`website` → NULL, `industry` kept); 404; 400 | As expected | Pass |
+| C5 | Delete a company with no recruiters or jobs | 200; row gone | As expected | Pass |
+| C6 | **Company with a job: direct SQL `DELETE`** | PostgreSQL error `23503` on `jobs_company_fkey` | As expected | Pass |
+| C7 | Same company through the API | 409 `COMPANY_IN_USE`, `details.constraint = jobs_company_fkey`, `jobs: 1`, message "… cannot be deleted because it still has 1 job …"; row still there | As expected | Pass |
+| C8 | Company with a recruiter through the API | 409, `recruiters_company_fkey`, `recruiters: 1` | As expected | Pass |
+| C9 | Seeded Nimbus | 409 "Nimbus Analytics Pvt Ltd cannot be deleted because it still has 2 recruiters and 3 jobs" | As expected | Pass |
+
+### Recruiter accounts
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| A1 | Create a recruiter | 201; `users.role = 'recruiter'`, hash matches `$2b$12$…` and is not the password; `recruiters` row with the company and designation; no hash in the response; the new account can log in | As expected | Pass |
+| A2 | Same email twice | 201 then 409 `EMAIL_TAKEN`; exactly 1 users row | As expected | Pass |
+| A3 | **Atomicity (API):** unknown `companyId` 999999999 | 400 with `recruiters_company_fkey`; `users_user_id_seq` advanced (proves the users INSERT ran); **0** users rows for the email | As expected | Pass |
+| A4 | **Atomicity (forced failure):** `createRecruiter()` with a hook that throws right after the users INSERT | Inside the transaction the users row is visible; after ROLLBACK **0** users rows and 0 recruiters rows | As expected | Pass |
+| A5 | Body with `role: "admin"` | 400 (strict schema) | As expected | Pass |
+| A6 | Rename, set phone, move a recruiter without jobs to another company | 200 with the new values | As expected | Pass |
+| A7 | Move seeded Meera (owns jobs) to Kestrel | 409 `RECRUITER_OWNS_JOBS`, `jobs_recruiter_fkey`; still company 1 | As expected | Pass |
+| A8 | **Deactivation:** log in, then the admin sets `isActive: false` | Before: `/api/auth/me` 200, `/api/recruiter/jobs` 200. After: `users.is_active = false`; **the same cookie** → 401 on both; login → 403 `ACCOUNT_DISABLED` with no cookie set | As expected | Pass |
+| A9 | Reactivate | `/api/auth/me` with the old cookie → 200 again | As expected | Pass |
+| A10 | PATCH user 1 (the admin) through the recruiter route | 404; admin still active | As expected | Pass |
+
+### Dashboard numbers vs independent SQL (base tables only, no views)
+| # | Check | Result |
+|---|---|---|
+| D1 | Totals: candidates 12, recruiters 4 (4 active), companies 3, open jobs 6, applications 16, interviews 7, offers 1 (seed; extra test rows are counted the same way on both sides) | Pass |
+| D2 | Stage counts applied 6, shortlisted 3, interviewed 3, offered 1, rejected 3; sum = total applications | Pass |
+| D3 | Top skills: each skill's open-job and required counts, only skills with ≥ 2 open jobs, sorted by demand (Docker 3, Python 3, NLP 2, PyTorch 2) | Pass |
+| D4 | Average match score per status to 4 decimals: applied 0.648, shortlisted 0.6546, interviewed 0.8053, offered 0.6658, rejected 0.5702 | Pass |
+| D5 | Every company: jobs, open jobs, applications, offers made / accepted / declined, acceptance rate, average rating, rated interviews; platform average 5.33; above-average flag (only Nimbus) | Pass |
+| D6 | Every job from `generate_hiring_pipeline_report()`: total and the 5 stage counts equal a `GROUP BY` on `applications` | Pass |
+
+### Unit tests (`tests/unit/admin-validation.test.js`, 9)
+| # | Test | Result |
+|---|---|---|
+| V1 | Company create: trim, `""` → NULL, missing optionals → NULL; blank name, `acme.example`, unknown field, 151-char name rejected | Pass |
+| V2 | Company PATCH keeps only sent fields (no NULL defaults); empty body rejected | Pass |
+| V3 | Recruiter create: email lower-cased, `companyId` coerced; same password rule as registration (length, letter + digit, ≤ 72 bytes); `role`, bad phone, id 0 / "abc" rejected | Pass |
+| V4 | Recruiter PATCH: `isActive` alone OK; string `"false"`, password change, empty body rejected | Pass |
+
+### Negative control (proves the atomicity test can fail)
+`BEGIN` was commented out in `createRecruiter()` and the "atomic" tests were run: **A4 failed** (the users row survived the error, because without BEGIN every statement commits on its own). A3 still passed in that run because it goes through the already-built server, which had the real code. The line was restored (`git diff` empty) and the full suite re-run green.
+
+### Bugs found and fixed in this stage (with evidence)
+| Bug | Found by | Fix |
+|---|---|---|
+| Nav content sat 32 px to the right of the page content | Desktop screenshot review | Padding moved from the inner nav container to the header, same box model as `PageShell` |
+| Companies page 790 px wide on a 390 px phone | Screenshot script's overflow check (`scrollWidth 790/390`); the culprit was the `sr-only` "Actions" header, which is absolutely positioned and escaped the scrolling table wrapper | `relative` on every table wrapper |
+| Status dropdown and note field on the recruiter job page stretched full width | Screenshot review: `inputClass` contains `w-full`, which beat the old `w-44` | New `inlineInputClass` for controls that sit in a row |
+| Table headers and "0 · 0 open" wrapped when a long email widened a column | Screenshot after creating a recruiter in the browser | `whitespace-nowrap` on headers and numeric cells |
+
+### Browser check (real headless Chrome, production build, 2026-10-16)
+A scratch script drove Chrome over the DevTools protocol, setting values in the real React forms and clicking the real buttons. All 12 scripted steps behaved as expected:
+1. Admin → Companies → Delete Nimbus → confirm → red alert "Nimbus Analytics Pvt Ltd cannot be deleted because it still has 2 recruiters and 3 jobs. Move or remove them first. Database rule: recruiters_company_fkey". The page did not crash and the row stayed.
+2. "Add company" form with every field labelled; "Browser Check Logistics" created and listed (4 rows).
+3. Recruiters → "New recruiter" → fictional "Tanvi Deshpande" for Browser Check Logistics → "Tanvi Deshpande created." and a new Active row.
+4. Deactivate → "Tanvi Deshpande deactivated. They can no longer sign in, and their current session stops working on the next request." The row turns grey and its badge says Inactive.
+5. Signed out, log in as Tanvi → "This account has been disabled".
+6. Delete Browser Check Logistics → "… still has 1 recruiter …" (`recruiters_company_fkey`).
+7. Recruiter Meera opens `/admin` → redirected to `/recruiter`.
+8. Hovering the "Rejected" bar shows the tooltip "Rejected: 3 applications (19%)".
+9. At 390 px the hamburger opens Dashboard / Companies / Recruiters; the user menu shows name, email, role, Notifications and Sign out.
+Afterwards the test recruiter and company were deleted: users 17, companies 3 (the seed).
+
+Screenshots (`docs/screenshots/stage8/`, seeded data, 1280 px desktop and 390 px mobile): admin-dashboard-desktop / -mobile / -tooltip, admin-companies-desktop / -mobile / -delete-blocked, admin-recruiters-desktop / -mobile, admin-recruiter-create-form, admin-mobile-menu, candidate-applications-desktop / -mobile, recruiter-jobs-desktop / -mobile, recruiter-job-detail-desktop. The script reported `scrollWidth == clientWidth` (no horizontal page scroll) on all 15. Wide tables scroll inside their own card instead.
+
+### Other Stage 8 checks
+| Check | Result |
+|---|---|
+| `important_queries.sql` (now 41 queries) | Whole file runs with `ON_ERROR_STOP`, exit 0. Q40: `users_inside_tx 1`, NOTICE `recruiters_company_fkey`, `users_after_rollback 0`. Q41: NOTICE "refused: … violates foreign key constraint recruiters_company_fkey" |
+| Test data cleanup | After all runs: 17 users, 3 companies, 4 recruiters, 8 jobs, 16 applications (the seed) |
+| `npm run build` | Passes; 5 new API routes dynamic (ƒ), 3 new admin pages partial prerender (◐). Only the existing Turbopack warning (`src/lib/candidate/resumes.js:76`) |
+| Dark mode | Off on purpose: `@custom-variant dark` points Tailwind's `dark:` at a class that is never set, so an OS dark setting cannot produce half-dark pages |

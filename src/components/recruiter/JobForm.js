@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, inputClass, labelClass, pageClass, request, secondaryClass } from "@/components/ui";
+import {
+  Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, inputClass, labelClass, linkClass, PageHeader, PageShell, request, secondaryClass, SkeletonList,
+} from "@/components/ui";
 
 const EMPTY = {
   title: "", description: "", location: "", workMode: "onsite", employmentType: "full_time",
@@ -71,17 +73,13 @@ export default function JobForm({ jobId }) {
     router.push(`/recruiter/jobs/${result.body.job.id}`);
   }
 
-  return <main className={pageClass}>
-    <div className="mx-auto max-w-3xl space-y-6">
-      <header>
-        <Link href={jobId ? `/recruiter/jobs/${jobId}` : "/recruiter"} className="text-sm text-zinc-500 hover:underline">← {jobId ? "Back to job" : "My jobs"}</Link>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">{jobId ? "Edit job" : "Post a job"}</h1>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">Title, description and required skills are embedded for semantic matching when you save.</p>
-      </header>
+  return <PageShell>
+      <PageHeader title={jobId ? "Edit job" : "Post a job"} description="Title, description and required skills are embedded for semantic matching when you save."
+        eyebrow={<Link href={jobId ? `/recruiter/jobs/${jobId}` : "/recruiter"} className={linkClass}>← {jobId ? "Back to job" : "My jobs"}</Link>} />
       <Alert lines={error} />
-      {!form ? !error && <p className="text-sm text-zinc-500">Loading job…</p> : <form onSubmit={submit} className={`${cardClass} space-y-4`}>
+      {!form ? !error && <SkeletonList rows={2} label="Loading job" /> : <form onSubmit={submit} className={`${cardClass} space-y-4`}>
         <label className={labelClass}>Title<input className={inputClass} value={form.title} onChange={set("title")} required maxLength={150} /></label>
-        <label className={labelClass}>Description <span className="font-normal text-zinc-500">(at least 50 characters)</span>
+        <label className={labelClass}>Description <span className="font-normal text-slate-500">(at least 50 characters)</span>
           <textarea className={`${inputClass} min-h-40`} value={form.description} onChange={set("description")} required minLength={50} maxLength={10000} />
         </label>
         <div className="grid gap-4 sm:grid-cols-3">
@@ -99,22 +97,22 @@ export default function JobForm({ jobId }) {
           <option value="draft">Draft (not visible to candidates)</option><option value="open">Open (accepting applications)</option><option value="closed">Closed</option>
         </select></label>
 
-        <fieldset className="space-y-3 rounded-xl border border-zinc-200 p-4 dark:border-zinc-800">
-          <legend className="px-1 text-sm font-medium text-zinc-800 dark:text-zinc-200">Skills</legend>
+        <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+          <legend className="px-1 text-sm font-medium text-slate-700">Skills</legend>
           <div className="flex flex-wrap items-end gap-2">
             <label className={`${labelClass} flex-1`}>Add a skill<select className={inputClass} value={pick} onChange={(e) => setPick(e.target.value)}>
               <option value="">Choose a skill…</option>{available.map((s) => <option key={s.id} value={s.id}>{s.name} · {s.category}</option>)}
             </select></label>
             <button type="button" className={secondaryClass} onClick={addSkill} disabled={!pick}>Add</button>
           </div>
-          {skills.length === 0 && <p className="text-sm text-zinc-500">No skills selected.</p>}
-          {skills.map((s) => <div key={s.skillId} className="flex flex-wrap items-center gap-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm dark:bg-zinc-900">
-            <span className="flex-1 font-medium text-zinc-900 dark:text-zinc-50">{s.name}</span>
-            <label className="flex items-center gap-1"><input type="checkbox" checked={s.isRequired} onChange={(e) => updateSkill(s.skillId, { isRequired: e.target.checked })} /> Required</label>
+          {skills.length === 0 && <p className="text-sm text-slate-500">No skills selected.</p>}
+          {skills.map((s) => <div key={s.skillId} className="flex flex-wrap items-center gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+            <span className="flex-1 font-medium text-slate-900">{s.name}</span>
+            <label className="flex items-center gap-1.5"><input className="h-4 w-4 rounded border-slate-300 accent-indigo-600" type="checkbox" checked={s.isRequired} onChange={(e) => updateSkill(s.skillId, { isRequired: e.target.checked })} /> Required</label>
             <label className="flex items-center gap-1">Min level
-              <select className="rounded border border-zinc-300 bg-white px-1 py-0.5 dark:border-zinc-700 dark:bg-zinc-900" value={s.minProficiency} onChange={(e) => updateSkill(s.skillId, { minProficiency: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
+              <select aria-label={`Minimum level for ${s.name}`} className="rounded-md border border-slate-300 bg-white px-1.5 py-0.5 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30" value={s.minProficiency} onChange={(e) => updateSkill(s.skillId, { minProficiency: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}</select>
             </label>
-            <button type="button" className="text-red-700 hover:underline dark:text-red-300" onClick={() => setSkills((old) => old.filter((x) => x.skillId !== s.skillId))}>Remove</button>
+            <button type="button" className="text-red-700 hover:underline" onClick={() => setSkills((old) => old.filter((x) => x.skillId !== s.skillId))}>Remove</button>
           </div>)}
         </fieldset>
 
@@ -123,6 +121,5 @@ export default function JobForm({ jobId }) {
           <Link href={jobId ? `/recruiter/jobs/${jobId}` : "/recruiter"} className={secondaryClass}>Cancel</Link>
         </div>
       </form>}
-    </div>
-  </main>;
+  </PageShell>;
 }

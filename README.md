@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 7 is done. That covers interviews (schedule, reschedule, cancel, complete with a 1–5 rating; the first interview moves the application to `interviewed` in the same transaction), offers (a make-offer transaction, accept/decline before expiry, withdraw), and a notifications inbox for every role. Every rule is enforced in the database too (guard triggers and a deferred constraint trigger, migrations 018–019). Stages 1–6 cover the schema, triggers/functions/views, auth, the candidate module, pgvector matching, and the recruiter module with applications. The admin dashboard comes next.
+> Status: Stage 8 is done. It adds the admin module: company management (deleting a company that still has recruiters or jobs is refused by the database's `ON DELETE RESTRICT` keys and shown as a clear message), recruiter accounts created in one users + recruiters transaction, activation/deactivation that also ends existing sessions, and an analytics dashboard built on the Stage 2 views and `generate_hiring_pipeline_report()`. Every page now shares one layout: a top nav with role links, a notification bell and a user menu, plus the same cards, status colours, empty states and loading skeletons. Stages 1–7 cover the schema, triggers/functions/views, auth, the candidate module, pgvector matching, the recruiter module, and interviews, offers and notifications.
 
 ## Prerequisites
 
@@ -102,6 +102,20 @@ Pages: recruiter `/recruiter/interviews`, `/recruiter/offers` ("Schedule intervi
 | `GET /api/notifications` · `PATCH /api/notifications/:id` · `POST /api/notifications/read-all` | Own inbox with unread count / mark read (others' → 404) / mark all read |
 
 Details and the transaction diagrams: [advanced-features.md §9–11](docs/advanced-features.md). Queries Q27–Q32 in `db/queries/important_queries.sql`.
+
+## Admin module and dashboard (Stage 8)
+
+Pages (admin only, checked on the server): `/admin` (dashboard), `/admin/companies`, `/admin/recruiters`. Signed-in users opening `/` go to their role's home page.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/admin/dashboard` | KPI totals, applications per stage, top skills of open jobs (GROUP BY + HAVING), average match score by status, per-company table (offer acceptance, interview rating, above-average flag), per-job funnel from `generate_hiring_pipeline_report()` |
+| `GET / POST /api/admin/companies` | List with recruiter/job/application counts / create (unique name → 409) |
+| `GET / PATCH / DELETE /api/admin/companies/:companyId` | Read, edit any subset of fields, delete. A company with recruiters or jobs → **409 `COMPANY_IN_USE`** (the database refuses; the message gives the counts) |
+| `GET / POST /api/admin/recruiters` | List with workload from `recruiter_pipeline_view` / create: bcrypt hash, then users + recruiters in **one transaction** |
+| `GET / PATCH /api/admin/recruiters/:recruiterId` | Edit name, company, designation, phone; `isActive: false` blocks login (403) and the current session (401). Moving a recruiter who owns jobs → 409 (composite FK) |
+
+Recruiters and candidates get **403** and anonymous requests **401** on every admin route. Details: [advanced-features.md §12–13](docs/advanced-features.md). Queries Q33–Q41 in `db/queries/important_queries.sql`. Screenshots: `docs/screenshots/stage8/`.
 
 ## Database scripts
 
