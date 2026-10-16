@@ -9,7 +9,8 @@ import { assertJobInRecruiterCompany } from "@/lib/recruiter/jobs";
 // ranked by applications.match_score (cosine similarity of the resume they
 // APPLIED WITH vs the job, set by the apply transaction). Applicants without
 // a score (not embedded yet) are listed last, never hidden.
-// Each row carries matched vs required skills and the status history.
+// Each row carries matched vs required skills, the status history, its
+// interviews (by round) and its offer (at most one: UNIQUE application_id).
 export const GET = withAuth({ roles: [ROLES.RECRUITER] }, async (_request, { user, params }) => {
   const jobId = idParamSchema.safeParse(params.jobId);
   if (!jobId.success) throw notFound("Job not found");
@@ -35,7 +36,17 @@ export const GET = withAuth({ roles: [ROLES.RECRUITER] }, async (_request, { use
                        ORDER BY h.changed_at, h.history_id)
                         FROM application_status_history h
                         LEFT JOIN users cu ON cu.user_id = h.changed_by
-                       WHERE h.application_id = a.application_id), '[]') AS history
+                       WHERE h.application_id = a.application_id), '[]') AS history,
+            COALESCE((SELECT json_agg(json_build_object(
+                         'id', i.interview_id, 'roundNo', i.round_no, 'scheduledAt', i.scheduled_at,
+                         'mode', i.mode, 'status', i.status, 'rating', i.rating)
+                       ORDER BY i.round_no)
+                        FROM interviews i
+                       WHERE i.application_id = a.application_id), '[]') AS interviews,
+            (SELECT json_build_object(
+                      'id', o.offer_id, 'status', o.status, 'salaryOffered', o.salary_offered,
+                      'currency', o.currency, 'joiningDate', o.joining_date, 'expiresOn', o.expires_on)
+               FROM offers o WHERE o.application_id = a.application_id) AS offer
        FROM applications a
        JOIN users u      ON u.user_id = a.candidate_id
        JOIN candidates c ON c.user_id = a.candidate_id
