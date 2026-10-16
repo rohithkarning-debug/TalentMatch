@@ -82,20 +82,23 @@ Tokens are **never** stored in `localStorage` or `sessionStorage`. The forms onl
 | `requireUser(request)` | Returns the user or throws 401 |
 | `requireRole(request, ...roles)` / `requireAdmin` / `requireRecruiter` / `requireCandidate` | 401/403 |
 | `assertRole(user, roles)` | 403 if the role is not allowed |
-| `assertOwner(user, ownerUserId)` | 403 unless the record belongs to the user |
-| `assertOwnerOrAdmin(user, ownerUserId)` | Same, but admins pass |
 | `getCurrentUser()` (`session.js`) | For Server Components (reads `cookies()`). Must be inside `<Suspense>` because Cache Components is on |
 
-**Pattern for every protected route in later stages:**
+**Ownership is enforced in SQL.** The owner is part of the WHERE clause, and the owner id is the session user, never a value from the request. Another user's record matches 0 rows, so the answer is the same 404 as for a record that does not exist, and its existence is not revealed:
 ```js
-export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { user, params }) => {
-  const id = idParamSchema.parse(params.id);                         // 1. validate input
-  const { rows } = await query("SELECT candidate_id, ... FROM applications WHERE application_id = $1", [id]);
-  if (!rows[0]) throw notFound();                                    // 2. load record
-  assertOwner(user, rows[0].candidate_id);                           // 3. owner comes from the DB, never the request
-  return NextResponse.json(...);
+export const DELETE = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { user, params }) => {
+  const id = idParamSchema.safeParse(params.resumeId);                 // 1. validate input
+  if (!id.success) throw notFound("Resume not found");
+  const found = await query(
+    "SELECT storage_path FROM resumes WHERE resume_id = $1 AND candidate_id = $2",
+    [id.data, user.id]);                                               // 2. owner = session user, in SQL
+  if (!found.rowCount) throw notFound("Resume not found");             // 3. someone else's resume -> 404
+  ...
 });
 ```
+Company-scoped recruiter records are different: `assertJobInRecruiterCompany` / `assertApplicationInRecruiterCompany` (`src/lib/recruiter/jobs.js`) load the record's company and the recruiter's company from the database and compare them. A missing record is 404; another company's record is **403**.
+
+(Stage 3 had two helpers, `assertOwner` and `assertOwnerOrAdmin`, used only by the demonstration routes. They were removed in Stage 9 together with those routes.)
 
 The UI may hide buttons for convenience, but that is never the protection: every route checks on the server. No `proxy.js` (formerly middleware) is used, so authorization never depends on one.
 

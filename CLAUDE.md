@@ -114,7 +114,9 @@ uploads/                       uploaded resumes (gitignored)
 ## Stage 3 conventions (auth / API)
 
 - Protected route handlers: `export const GET = withAuth({ roles: [ROLES.X] }, async (request, { user, params }) => ...)` from `src/lib/auth/guards.js`. Public routes: `withErrorHandling`. Never rely on UI hiding or proxy/middleware for authorization.
-- Ownership: load the owner id from the DATABASE, then `assertOwner` / `assertOwnerOrAdmin`. Never trust ids or roles from the request body.
+- Ownership is enforced in SQL, using the session user id, never an id or role from the request body:
+  - Records owned by one user (candidate profile, skills, resumes, applications, interviews, offers; notifications): put the owner in the WHERE clause, e.g. `WHERE resume_id = $1 AND candidate_id = $2` with `$2` = session user id. Another user's record matches 0 rows and returns **404**, so its existence is not revealed. Updates and deletes do the same (`UPDATE … WHERE notification_id = $1 AND user_id = $2`).
+  - Company-scoped recruiter records (jobs, applications, interviews, offers of a company): load the record's company and the recruiter's company from the DATABASE and compare them with `assertJobInRecruiterCompany` / `assertApplicationInRecruiterCompany` (`src/lib/recruiter/jobs.js`) or the same comparison inline. A missing record is 404 and another company's record is **403**.
 - Bodies: `readJsonBody(request, zodSchema)`; state-changing routes also call `assertSameOrigin(request)`. Use `z.strictObject` for request schemas.
 - Errors: throw `ApiError` / `badRequest` / `forbidden` / `notFound` (`src/lib/api/errors.js`). Response format `{ error: { code, message, details? } }`.
 - Only `toSafeUser()` shapes leave the server. Never select `password_hash` except in the login route.

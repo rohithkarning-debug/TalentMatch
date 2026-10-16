@@ -117,4 +117,3 @@ No history rewrite is needed.
 
 **Stateless JWT.** A copied token stays valid until it expires (max 8 h) unless the account is disabled or its role changes.
 
-**Unused helpers.** `assertOwner()` / `assertOwnerOrAdmin()` in `src/lib/auth/guards.js` were only used by the removed demo routes. Every module checks ownership inside its SQL instead (`WHERE candidate_id = $session`, company comparisons). They are kept because CLAUDE.md names them as the ownership convention.
