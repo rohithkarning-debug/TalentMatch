@@ -164,3 +164,4 @@ These are described in detail, with test output, in [advanced-features.md](advan
 - **011:** `applicant_count` maintenance, the status-transition guard, the automatic status history, and "new applications start as `applied`".
 - **012:** `generate_hiring_pipeline_report()` and `update_application_status()`.
 - **013:** `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary`.
+- **Later stages:** 015–016 vector functions (Stages 5–6), 018–019 interview and offer rules (Stage 7), 020 "rejecting an application withdraws its pending offer" and 021 "an interview cannot be completed before its time" (Stage 9). See advanced-features.md §2.3, §7, §9 and §14.
