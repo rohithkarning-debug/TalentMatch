@@ -38,6 +38,16 @@ export async function extractResumeText(buffer, mimeType) {
   return text;
 }
 
+// Call inside a transaction before changing which resume is primary.
+// Locking the candidate's own row (not the resumes rows) also works when the
+// candidate has no resumes yet, so two uploads in parallel cannot both decide
+// "there is no primary, make mine primary". The second waits for the first.
+// NO KEY UPDATE is the weakest lock that blocks another resume transaction;
+// unlike FOR UPDATE it does not block FK checks (e.g. a new application).
+export async function lockCandidateResumes(client, candidateId) {
+  await client.query("SELECT user_id FROM candidates WHERE user_id = $1 FOR NO KEY UPDATE", [candidateId]);
+}
+
 // Problems with the uploaded file become a 400 the candidate can act on.
 // Anything else (e.g. the parser failing to load) is left as a server error.
 function describePdfError(err) {

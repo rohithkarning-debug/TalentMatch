@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { assertSameOrigin } from "@/lib/api/request";
-import { ApiError, notFound } from "@/lib/api/errors";
+import { ApiError } from "@/lib/api/errors";
 import { ROLES, withAuth } from "@/lib/auth/guards";
 import { getPool, query } from "@/lib/db";
-import { extractResumeText, MAX_RESUME_BYTES, persistResume, safeDisplayName } from "@/lib/candidate/resumes";
-
+import { extractResumeText, lockCandidateResumes, MAX_RESUME_BYTES, persistResume, removeStoredResume, safeDisplayName } from "@/lib/candidate/resumes";
 
 export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (_request, { user }) => {
   const { rows } = await query(
@@ -43,6 +42,8 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await lockCandidateResumes(client, user.id);
+    // The first resume a candidate uploads becomes their primary one.
     const primary = await client.query("SELECT 1 FROM resumes WHERE candidate_id = $1 AND is_primary = TRUE LIMIT 1", [user.id]);
     const { rows } = await client.query(
       `INSERT INTO resumes (candidate_id, file_name, storage_path, mime_type, file_size_bytes, extracted_text, is_primary)
@@ -53,7 +54,6 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
     return NextResponse.json({ resume: rows[0] }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     await client.query("ROLLBACK");
-    const { removeStoredResume } = await import("@/lib/candidate/resumes");
     await removeStoredResume(stored.storagePath).catch(() => {});
     throw err;
   } finally { client.release(); }
