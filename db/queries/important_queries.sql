@@ -1,7 +1,7 @@
 -- ============================================================================
 -- TalentMatch — Important SQL queries
--- Queries against the seeded schema; they leave the data unchanged (Q23
--- writes inside a transaction that it rolls back). Each one is preceded by:
+-- Queries against the seeded schema; they leave the data unchanged (Q23 and
+-- Q27-Q29 write inside transactions that they roll back). Each one is preceded by:
 --   DEMONSTRATES: the SQL concept(s)   RETURNS: what you get back
 --   WHY: how TalentMatch uses it
 --
@@ -431,3 +431,184 @@ SELECT u.full_name, a.status, a.match_score,
   JOIN users u ON u.user_id = a.candidate_id
  WHERE a.job_id = (SELECT job_id FROM jobs WHERE title = 'Machine Learning Engineer')
  ORDER BY a.match_score DESC NULLS LAST, a.applied_at;
+
+-- ============================================================================
+-- Stage 7: interviews, offers and notifications
+-- ============================================================================
+
+\echo '\n=== Q27 Make-offer transaction (same steps as makeOffer() in src/lib/offers.js) ==='
+-- DEMONSTRATES: explicit transaction, row lock SELECT ... FOR UPDATE, a stored
+--               function call inside the transaction (update_application_status),
+--               triggers firing inside it (transition guard, status history,
+--               trg_offers_guard), INSERT ... RETURNING, ROLLBACK.
+-- RETURNS: Sneha's Frontend application (seeded: interviewed) moved to
+--          'offered', the new offer, the trigger's history row and the
+--          notifications, all as seen INSIDE the transaction; then the state
+--          after ROLLBACK (unchanged).
+-- WHY: POST /api/recruiter/applications/:id/offer. The app ends with COMMIT
+--      (where the deferred trg_applications_stage_records also runs).
+BEGIN;
+SELECT a.application_id, a.status AS status_before
+  FROM applications a
+  JOIN users u ON u.user_id = a.candidate_id
+  JOIN jobs j  ON j.job_id = a.job_id
+ WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)'
+   FOR UPDATE OF a;                                 -- one recruiter at a time
+SELECT application_id, status AS status_inside_txn
+  FROM update_application_status(
+         (SELECT a.application_id FROM applications a JOIN users u ON u.user_id = a.candidate_id
+           JOIN jobs j ON j.job_id = a.job_id
+          WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)'),
+         'offered',
+         (SELECT user_id FROM users WHERE email = 'kavya.menon@kestrellabs.example'),
+         'Offer made');                             -- guard: interviewed -> offered only
+INSERT INTO offers (application_id, salary_offered, joining_date, expires_on)
+SELECT a.application_id, 1800000, local_today() + 30, local_today() + 7
+  FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
+ WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)'
+RETURNING offer_id, salary_offered, joining_date, expires_on, status;   -- UNIQUE (application_id)
+INSERT INTO notifications (user_id, type, title, message, related_application_id)
+SELECT a.candidate_id, 'offer_made', 'Offer received: ' || j.title,
+       'Kestrel Software Labs has offered you the ' || j.title || ' role.', a.application_id
+  FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
+ WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)';
+SELECT h.old_status, h.new_status, cu.full_name AS changed_by, h.note,
+       (SELECT string_agg(n.type, ', ' ORDER BY n.notification_id) FROM notifications n
+         WHERE n.related_application_id = h.application_id AND n.created_at = now()) AS notifications_in_txn
+  FROM application_status_history h
+  JOIN users cu ON cu.user_id = h.changed_by
+ WHERE h.application_id = (SELECT a.application_id FROM applications a JOIN users u ON u.user_id = a.candidate_id
+                            JOIN jobs j ON j.job_id = a.job_id
+                           WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)')
+ ORDER BY h.history_id DESC LIMIT 1;
+ROLLBACK;                                           -- the app runs COMMIT here
+SELECT a.status AS status_after_rollback,
+       (SELECT count(*) FROM offers o WHERE o.application_id = a.application_id) AS offers
+  FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
+ WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)';
+
+\echo '\n=== Q28 Forced failure: a UNIQUE violation undoes the status change, history row and notification ==='
+-- DEMONSTRATES: atomicity. A PL/pgSQL block with an EXCEPTION clause runs as
+--               a subtransaction: when the second INSERT INTO offers breaks
+--               UNIQUE (application_id), everything the block did is undone,
+--               including the work of triggers and of update_application_status().
+-- RETURNS: NOTICE lines with counts before, inside (after the status change)
+--          and after the failure; "after" equals "before".
+-- WHY: the rollback tests in tests/integration/pipeline.test.js. The outer
+--      ROLLBACK also removes the "colleague's offer" set up for the demo.
+BEGIN;
+INSERT INTO offers (application_id, salary_offered, joining_date, expires_on)   -- a colleague's offer, committed first
+SELECT a.application_id, 1700000, local_today() + 30, local_today() + 7
+  FROM applications a JOIN users u ON u.user_id = a.candidate_id JOIN jobs j ON j.job_id = a.job_id
+ WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)';
+DO $$
+DECLARE
+    v_app   BIGINT := (SELECT a.application_id FROM applications a JOIN users u ON u.user_id = a.candidate_id
+                        JOIN jobs j ON j.job_id = a.job_id
+                       WHERE u.email = 'sneha.kulkarni@mail.example' AND j.title = 'Frontend Developer (React / Next.js)');
+    v_kavya BIGINT := (SELECT user_id FROM users WHERE email = 'kavya.menon@kestrellabs.example');
+    v_state TEXT;
+BEGIN
+    SELECT format('status=%s history=%s notifications=%s', a.status,
+                  (SELECT count(*) FROM application_status_history h WHERE h.application_id = v_app),
+                  (SELECT count(*) FROM notifications n WHERE n.related_application_id = v_app))
+      INTO v_state FROM applications a WHERE a.application_id = v_app;
+    RAISE NOTICE 'before: %', v_state;
+    BEGIN
+        PERFORM update_application_status(v_app, 'offered', v_kavya, 'Offer made');
+        SELECT format('status=%s history=%s notifications=%s', a.status,
+                      (SELECT count(*) FROM application_status_history h WHERE h.application_id = v_app),
+                      (SELECT count(*) FROM notifications n WHERE n.related_application_id = v_app))
+          INTO v_state FROM applications a WHERE a.application_id = v_app;
+        RAISE NOTICE 'inside: %', v_state;
+        INSERT INTO offers (application_id, salary_offered, joining_date, expires_on)
+        VALUES (v_app, 1800000, local_today() + 30, local_today() + 7);       -- fails: UNIQUE
+    EXCEPTION WHEN unique_violation THEN
+        RAISE NOTICE 'error:  %', SQLERRM;
+    END;
+    SELECT format('status=%s history=%s notifications=%s', a.status,
+                  (SELECT count(*) FROM application_status_history h WHERE h.application_id = v_app),
+                  (SELECT count(*) FROM notifications n WHERE n.related_application_id = v_app))
+      INTO v_state FROM applications a WHERE a.application_id = v_app;
+    RAISE NOTICE 'after:  %', v_state;
+END $$;
+ROLLBACK;
+
+\echo '\n=== Q29 Deferred constraint trigger: interviewed needs an interview ==='
+-- DEMONSTRATES: CREATE CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED,
+--               SET CONSTRAINTS ... IMMEDIATE (run the deferred check now).
+-- RETURNS: NOTICE lines: the UPDATE is accepted at first, then the check that
+--          normally runs at COMMIT rejects it.
+-- WHY: the status dropdown cannot fake 'interviewed' or 'offered' without the
+--      matching interview / pending offer row.
+BEGIN;
+DO $$
+BEGIN
+    PERFORM update_application_status(
+        (SELECT a.application_id FROM applications a JOIN users u ON u.user_id = a.candidate_id
+          JOIN jobs j ON j.job_id = a.job_id
+         WHERE u.email = 'ishita.banerjee@mail.example' AND j.title = 'Data Analyst'),
+        'interviewed', (SELECT user_id FROM users WHERE email = 'meera.iyer@nimbusanalytics.example'), 'no interview');
+    RAISE NOTICE 'UPDATE shortlisted -> interviewed accepted for now (check deferred to COMMIT)';
+    SET CONSTRAINTS trg_applications_stage_records IMMEDIATE;
+EXCEPTION WHEN check_violation THEN
+    RAISE NOTICE 'deferred check: %', SQLERRM;
+END $$;
+ROLLBACK;
+
+\echo '\n=== Q30 A candidate''s interviews: upcoming first, then past ==='
+-- DEMONSTRATES: JOIN over four tables, a boolean expression in SELECT and
+--               ORDER BY, CASE in ORDER BY (ascending for upcoming, descending
+--               for past).
+-- RETURNS: Aditi's interviews with company, mode and whether each is upcoming.
+-- WHY: GET /api/candidate/interviews (rating and feedback are NOT selected:
+--      they are the recruiter's internal notes).
+SELECT j.title, c.name AS company, i.round_no, i.scheduled_at, i.mode, i.status,
+       (i.status = 'scheduled' AND i.scheduled_at >= now()) AS is_upcoming
+  FROM interviews i
+  JOIN applications a ON a.application_id = i.application_id
+  JOIN jobs j         ON j.job_id = a.job_id
+  JOIN companies c    ON c.company_id = j.company_id
+ WHERE a.candidate_id = (SELECT user_id FROM users WHERE email = 'aditi.sharma@mail.example')
+ ORDER BY (i.status = 'scheduled' AND i.scheduled_at >= now()) DESC,
+          CASE WHEN i.status = 'scheduled' AND i.scheduled_at >= now() THEN i.scheduled_at END ASC,
+          i.scheduled_at DESC;
+
+\echo '\n=== Q31 Interview scorecard: candidates averaging >= 4 over completed rounds (GROUP BY + HAVING) ==='
+-- DEMONSTRATES: aggregates with FILTER, GROUP BY, HAVING, ORDER BY on an aggregate.
+-- RETURNS: per candidate and job: completed rounds, average rating, overdue
+--          scheduled rounds, current application status.
+-- WHY: helps a recruiter decide who is ready for an offer.
+SELECT u.full_name, j.title,
+       count(*) FILTER (WHERE i.status = 'completed')                            AS completed_rounds,
+       round(avg(i.rating) FILTER (WHERE i.status = 'completed'), 2)             AS avg_rating,
+       count(*) FILTER (WHERE i.status = 'scheduled' AND i.scheduled_at < now()) AS overdue_rounds,
+       a.status AS application_status
+  FROM interviews i
+  JOIN applications a ON a.application_id = i.application_id
+  JOIN users u        ON u.user_id = a.candidate_id
+  JOIN jobs j         ON j.job_id = a.job_id
+ GROUP BY u.full_name, j.title, a.status
+HAVING avg(i.rating) FILTER (WHERE i.status = 'completed') >= 4
+ ORDER BY avg_rating DESC, completed_rounds DESC;
+
+\echo '\n=== Q32 Offers with their response window, and unread notifications per user ==='
+-- DEMONSTRATES: CASE, date arithmetic with local_today() (India date), and a
+--               count that the partial index notifications_unread_idx serves.
+-- RETURNS: every offer with "days left" / expired; then unread counts per user.
+-- WHY: the My offers / Offers pages, and the unread badge on the
+--      Notifications link.
+SELECT u.full_name, j.title, o.salary_offered, o.status, o.expires_on,
+       CASE WHEN o.status <> 'pending'        THEN 'answered'
+            WHEN o.expires_on < local_today() THEN 'expired'
+            ELSE (o.expires_on - local_today()) || ' day(s) left' END AS response_window
+  FROM offers o
+  JOIN applications a ON a.application_id = o.application_id
+  JOIN users u        ON u.user_id = a.candidate_id
+  JOIN jobs j         ON j.job_id = a.job_id
+ ORDER BY o.offered_at DESC;
+SELECT u.email, u.role, count(*) AS unread
+  FROM notifications n JOIN users u ON u.user_id = n.user_id
+ WHERE NOT n.is_read
+ GROUP BY u.email, u.role
+ ORDER BY unread DESC, u.email;

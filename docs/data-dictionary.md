@@ -147,7 +147,7 @@ A candidate's application to a job. This is the centre of the hiring workflow.
 | candidate_id | BIGINT | NN | | **FK** → candidates ON DELETE CASCADE |
 | resume_id | BIGINT | | | **FK** → resumes ON DELETE SET NULL |
 | cover_letter | TEXT | | | |
-| status | VARCHAR(15) | NN | `'applied'` | CHECK IN (`applied`, `shortlisted`, `interviewed`, `offered`, `rejected`) |
+| status | VARCHAR(15) | NN | `'applied'` | CHECK IN (`applied`, `shortlisted`, `interviewed`, `offered`, `rejected`). Transitions guarded by trigger (011). Since 018 a deferred constraint trigger checks at COMMIT that `interviewed` has an interview and `offered` has a pending offer |
 | match_score | NUMERIC(5,4) | | | CHECK −1 to 1. **Real cosine similarity** `1 − (resume <=> job)`. NULL until embeddings exist, never faked |
 | applied_at | TIMESTAMPTZ | NN | `now()` | |
 | updated_at | TIMESTAMPTZ | NN | `now()` | CHECK `updated_at ≥ applied_at`; set automatically by trigger since 010 |
@@ -174,16 +174,18 @@ Audit trail: one row per status change, written automatically by trigger `trg_ap
 | interview_id | BIGINT | NN | ID | **PK** |
 | application_id | BIGINT | NN | | **FK** → applications ON DELETE CASCADE; **UK** `(application_id, round_no)` |
 | round_no | SMALLINT | NN | | CHECK 1–10 |
-| scheduled_at | TIMESTAMPTZ | NN | | Indexed |
+| scheduled_at | TIMESTAMPTZ | NN | | Indexed. Must be in the future on INSERT and on reschedule (trigger `trg_interviews_guard`, 018) |
 | duration_minutes | SMALLINT | NN | `45` | CHECK 15–480 |
 | mode | VARCHAR(10) | NN | `'video'` | CHECK IN (`video`, `phone`, `onsite`) |
-| location_or_link | VARCHAR(500) | | | Meeting link or address |
+| location_or_link | VARCHAR(500) | | | Meeting link or address. CHECK `interviews_location_required_check` (018): required unless mode = `phone` |
 | interviewer_id | BIGINT | | | **FK** → recruiters ON DELETE SET NULL |
-| status | VARCHAR(12) | NN | `'scheduled'` | CHECK IN (`scheduled`, `completed`, `cancelled`, `no_show`) |
+| status | VARCHAR(12) | NN | `'scheduled'` | CHECK IN (`scheduled`, `completed`, `cancelled`, `no_show`). New rows must be `scheduled`; only `scheduled` rows can change; the other three are final and frozen (`trg_interviews_guard`, 018/019) |
 | rating | SMALLINT | | | CHECK 1–5; CHECK only allowed when status = `completed` |
 | feedback | TEXT | | | |
 | created_at | TIMESTAMPTZ | NN | `now()` | |
 | updated_at | TIMESTAMPTZ | NN | `now()` | Added in 010; set automatically by trigger `set_updated_at()` |
+
+Also enforced by `trg_interviews_guard` (018): an interview can only be inserted for a `shortlisted` or `interviewed` application.
 
 ## 13. `offers`
 
@@ -193,9 +195,9 @@ Audit trail: one row per status change, written automatically by trigger `trg_ap
 | application_id | BIGINT | NN | | **FK** → applications ON DELETE CASCADE; **UK** (one offer per application) |
 | salary_offered | NUMERIC(12,2) | NN | | CHECK > 0 |
 | currency | CHAR(3) | NN | `'INR'` | CHECK three upper-case letters |
-| joining_date | DATE | NN | | |
-| expires_on | DATE | | | CHECK `expires_on ≤ joining_date` |
-| status | VARCHAR(10) | NN | `'pending'` | CHECK IN (`pending`, `accepted`, `declined`, `withdrawn`) |
+| joining_date | DATE | NN | | Must be after today (India date, `local_today()`) on INSERT (`trg_offers_guard`, 018) |
+| expires_on | DATE | | | CHECK `expires_on ≤ joining_date`. Not in the past on INSERT; an offer can be accepted/declined until the end of this day (`trg_offers_guard`) |
+| status | VARCHAR(10) | NN | `'pending'` | CHECK IN (`pending`, `accepted`, `declined`, `withdrawn`). New rows must be `pending`; only `pending` rows can change; the other three are final and frozen (`trg_offers_guard`, 018/019). Accept/decline also needs the application to be `offered` |
 | offered_at | TIMESTAMPTZ | NN | `now()` | |
 | responded_at | TIMESTAMPTZ | | | CHECK: NULL while pending, set once accepted/declined |
 | updated_at | TIMESTAMPTZ | NN | `now()` | Added in 010; set automatically by trigger `set_updated_at()` |
@@ -207,7 +209,7 @@ In-app messages shown to a user.
 |---|---|---|---|---|
 | notification_id | BIGINT | NN | ID | **PK** |
 | user_id | BIGINT | NN | | **FK** → users ON DELETE CASCADE |
-| type | VARCHAR(30) | NN | | CHECK IN (`application_submitted`, `status_changed`, `interview_scheduled`, `offer_made`, `system`) |
+| type | VARCHAR(30) | NN | | CHECK IN (`application_submitted`, `status_changed`, `interview_scheduled`, `offer_made`, `system`, and since 018 `interview_updated`, `offer_responded`, `offer_withdrawn`) |
 | title | VARCHAR(150) | NN | | CHECK not blank |
 | message | TEXT | NN | | |
 | related_application_id | BIGINT | | | **FK** → applications ON DELETE SET NULL |

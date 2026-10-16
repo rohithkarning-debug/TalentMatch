@@ -353,3 +353,89 @@ Meera logs in → My Jobs with applicant counts → posts a job with Python + NL
 | `important_queries.sql` (now 26 queries) | Whole file runs with `ON_ERROR_STOP=1`, exit code 0; Q23 shows count 3 → 4 inside the transaction, 3 after ROLLBACK; Q25 max difference 0.00004318 |
 | Test data cleanup | After the runs: 8 jobs, 16 applications, 0 `@test.example` users |
 | `npm run build` | Passes; all new API routes dynamic (ƒ), new pages partial prerender (◐). The existing Turbopack warning from `src/lib/candidate/resumes.js:76` is unchanged |
+
+## Stage 7 — Interviews, offers and notifications
+
+Tests: `tests/unit/pipeline-validation.test.js` (request schemas), `tests/integration/pipeline.test.js` (production build on port 3104, real database). New migrations: `018_interview_offer_rules.sql`, `019_freeze_final_interviews_offers.sql`.
+```powershell
+npm run db:migrate
+npm run test:unit
+npm run build
+npm run test:integration
+```
+Results recorded on 2026-10-16: unit **58 pass, 0 fail** (45 earlier + 13 pipeline validation). Integration **102 pass, 0 fail** (74 earlier + 28 pipeline). Every "what changed" check reads the database directly, not only the API response.
+
+### Interviews
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| I1 | Meera schedules the first interview for a shortlisted application | 201, round 1 `scheduled`, application `interviewed`; trigger history row `shortlisted → interviewed`, `changed_by` Meera, note "Interview round 1 scheduled"; candidate gets `status_changed` + `interview_scheduled`; `interviewer_id` = Meera | As expected | Pass |
+| I2 | Second interview (onsite, 90 min) | round_no 2; status and history count unchanged | As expected | Pass |
+| I3 | Candidate `GET /api/candidate/interviews` | Both rounds upcoming; no `rating` / `feedback` keys; another candidate sees `[]` | As expected | Pass |
+| I4 | Reschedule, cancel, then reschedule and cancel again | 200, 200, then **409** `RULE_VIOLATION` "… is already cancelled" ×2; exactly 2 `interview_updated` notifications (no duplicate) | As expected | Pass |
+| I5 | Mark completed with rating 5 + feedback | 200, `completed`, rating 5 | As expected | Pass |
+| I6 | Rating 0 and 6 (API); `rating = 6` by direct SQL | 400 ×2; SQL `23514 interviews_rating_check`; row still `scheduled`, rating NULL | As expected | Pass |
+| I7 | Interview 2 hours in the past (API); past INSERT and past reschedule by direct SQL | 400 "Interview must be scheduled in the future"; SQL errors from `trg_interviews_guard` (insert and reschedule); 0 rows | As expected | Pass |
+| I8 | Video without a link (API); onsite without location (SQL) | 400; `interviews_location_required_check` | As expected | Pass |
+| I9 | Schedule for an `applied` application | 409 "… only … shortlisted or interviewed applications"; nothing changed (status, history, notifications, interviews) | As expected | Pass |
+
+### Offers (transaction)
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| O1 | Make an offer on the interviewed application | 201 `pending` ₹22,00,000 INR; application `offered`; history `interviewed → offered` by Meera ("Offer made"); notifications +2 (`status_changed`, `offer_made`); 1 offer row | As expected | Pass |
+| O2 | **Forced rollback:** second offer for the same application | 409 `OFFER_EXISTS` (UNIQUE `offers_application_id_key`); status, history, notifications, offers all unchanged; the stored salary is still the first one | As expected | Pass |
+| O3 | **Forced rollback after the status change:** an `interviewed` application that already has an offer row | 409; the status change, its history row and its notification are rolled back (snapshot identical) | As expected | Pass |
+| O4 | **Forced rollback at the last step:** `makeOffer()` with a blank notification title | `23514 notifications_title_not_blank_check`; no offer, status `interviewed`, no history row, no notification | As expected | Pass |
+| O5 | `offered` without an offer: `update_application_status()` by SQL and the status PATCH API | SQL error at COMMIT "cannot be offered without a pending offer" (deferred trigger); API 409 `RULE_VIOLATION`; nothing changed | As expected | Pass |
+| O6 | Offer on an `applied` application | 409 `INVALID_TRANSITION` "… applied -> offered …"; nothing saved | As expected | Pass |
+| O7 | Expiry yesterday (API); joining date today (SQL) | 400; SQL "Joining date must be after today" (`trg_offers_guard`) | As expected | Pass |
+| O8 | Another candidate responds to the offer; a recruiter calls the candidate route | **404** (offer not revealed) / 403; offer still `pending`; other candidate's offer list `[]` | As expected | Pass |
+| O9 | Candidate accepts | 200 `accepted`, `responded_at` set; Meera gets `offer_responded`; application stays `offered` | As expected | Pass |
+| O10 | Decline after accepting; accept again | 409 "… already accepted" ×2; no second recruiter notification | As expected | Pass |
+| O11 | **Expired offer:** `expires_on` set to yesterday (simulating time passing), then accept | List shows `canRespond false, isExpired true`; 409 "… expired on …"; offer still `pending`, `responded_at` NULL, no notification. After extending to today, decline → 200 and the recruiter gets "Offer declined: …" | As expected | Pass |
+| O12 | Withdraw (Kavya, then Meera) | Kavya 403; Meera 200 `withdrawn`, application `offered → rejected`, candidate gets `status_changed` + `offer_withdrawn` | As expected | Pass |
+| O13 | Withdraw again; withdraw an accepted offer | 409 "… already withdrawn" (no new notification) / 409 "… already accepted" | As expected | Pass |
+| O14 | Arjun posts a job, Meera makes the offer, candidate accepts | Exactly Meera and Arjun get `offer_responded` | As expected | Pass |
+
+### Permissions
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| P1 | Kavya (Kestrel) schedules / cancels / makes an offer on Nimbus applications | 403 ×3; nothing changed; Kavya's interview and offer lists contain none of them; Meera's upcoming list does | As expected | Pass |
+| P2 | Candidate calls schedule, interview PATCH, make offer, recruiter interview list | 403 ×4; no cookie → 401; unknown application → 404 | As expected | Pass |
+
+### Notifications inbox
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| N1 | Candidate lists notifications | Every returned id belongs to the candidate (checked in SQL); `unreadCount` = SQL count; another candidate's list shares no ids; `?userId=1` → 400 | As expected | Pass |
+| N2 | Another candidate and a recruiter mark the candidate's notification read; then the owner | 404 ×2 and `is_read` still false; owner 200, unread count −1 | As expected | Pass |
+| N3 | Mark all as read | `updated > 0`, unread 0; another user's unread count unchanged; no session → 401 | As expected | Pass |
+
+### Unit tests (`tests/unit/pipeline-validation.test.js`, 13)
+| # | Test | Result |
+|---|---|---|
+| U1 | `todayInIndia()` returns the Asia/Kolkata date (20:00 UTC on 15 Oct → 16 Oct) | Pass |
+| U2 | Interview schedule: defaults; phone without location; past time rejected; 8 bad inputs (no link, onsite without address, link without http(s), mode `zoom`, 10 / 481 minutes, timestamp without offset, extra `applicationStatus`) | Pass |
+| U3 | Interview update: three actions accepted; rating 0/6/−1/4.5/"five", blank feedback, past reschedule, unknown action, `cancel` with `rating` rejected | Pass |
+| U4 | Offer: valid offer, coercion and INR default; expiry today allowed; zero salary, joining today, past expiry, expiry after joining, missing expiry, bad currency, extra `status` rejected | Pass |
+| U5 | Offer response, notification PATCH and list query schemas (only `accept`/`decline`, only `isRead: true`, no `userId`) | Pass |
+
+### Bugs found and fixed in this stage (with evidence)
+| Bug | Found by | Fix |
+|---|---|---|
+| Withdrawing an offer twice returned 200 and notified the candidate again (same for cancelling an interview twice or accepting twice): the 018 guards only rejected a *change* of status | Integration test O13: `expected 409, actual 200` | Migration 019: completed/cancelled interviews and accepted/declined/withdrawn offers are frozen (commit "Freeze final interviews and offers (migration 019)") |
+| When a recruiter made an offer on a colleague's job, only the job poster was told the candidate accepted | Browser check: Meera's inbox never showed "accepted" (it went to Arjun, who posted the job) | Notify the poster **and** the offer maker (from the `→ offered` history row); test O14 |
+
+### Browser check (real headless Chrome, production build, 2026-10-16)
+A scratch script drove Chrome over the DevTools protocol (time zone Asia/Kolkata), typing into the real forms and clicking the real buttons. **17/17 checks passed.** Setup: a fictional candidate "Nikhil Arora" registers, uploads a resume and applies to the seeded Data Analyst job (via the API, as in Stage 6). Then in the browser:
+Meera logs in → shortlists Nikhil with the status dropdown → "Schedule interview" → a past time is refused by the form ("Interview must be scheduled in the future") → tomorrow 11:00, video link → the row shows "Round 1 · Scheduled", status **Interviewed** and a "Make offer" button (DB: status `interviewed`, last history row `interviewed`, candidate notifications `status_changed, status_changed, interview_scheduled`) → Interviews page lists the seeded rounds and flags the seeded 14 Oct round "The time has passed" → mark completed 4/5 with feedback → "Make offer" ₹14,50,000, joining +45 days, respond by +10 days → row shows "Offer ₹14,50,000 · Pending", status **Offered** → choosing **offered** for Ishita (shortlisted) shows "Invalid application status transition: shortlisted -> offered" → Offers page lists the seeded Rohan offer and the new one → Nikhil logs in: inbox "5 unread", mark one read → "4 unread" → My interviews shows round 1 under Past **without** the recruiter's feedback → My offers → Accept (confirmation dialog) → "Offer accepted. The recruiter has been notified." (DB: `accepted`, `responded_at` set) → Meera's inbox shows "Nikhil Arora accepted your offer for Data Analyst." → seeded Rohan's pending offer with Accept/Decline and seeded Aditi's interviews render.
+Afterwards the script deleted the test candidate (cascade) and the recruiter notifications it created: 0 test users, Data Analyst `applicant_count` back to 3, 6 notifications (the seeded ones).
+
+Screenshots: `docs/screenshots/stage7/` (recruiter-schedule-interview-past-error, recruiter-interviews, recruiter-make-offer-form, recruiter-job-detail-offer, recruiter-offers, recruiter-notifications, candidate-notifications, candidate-offers-pending, candidate-offer-accepted, candidate-offers-seeded, candidate-interviews-seeded).
+
+### Other Stage 7 checks
+| Check | Result |
+|---|---|
+| `npm run db:migrate` | 018 and 019 applied; 17 skipped |
+| `npm run db:seed` after 018 | Still runs (the seeded past interviews and the old offer are imported with `import_mode`) |
+| `important_queries.sql` (now 32 queries) | Whole file runs with `ON_ERROR_STOP`, exit code 0. Q27: `interviewed → offered` inside the transaction, `interviewed` and 0 offers after ROLLBACK. Q28: before `status=interviewed history=3 notifications=1`, inside `offered / 4 / 2`, after the UNIQUE error `interviewed / 3 / 1`. Q29: the deferred check fires with `SET CONSTRAINTS … IMMEDIATE` |
+| Test data cleanup | After all runs: 8 jobs, 16 applications, 7 interviews, 1 offer, 6 notifications (the seed), 0 `@test.example` users |
+| `npm run build` | Passes; 12 new API routes dynamic (ƒ), 5 new pages partial prerender (◐). Only the existing Turbopack warning (`src/lib/candidate/resumes.js:76`) |
