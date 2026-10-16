@@ -33,7 +33,12 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
   if (mimeType === "application/pdf" && buffer.subarray(0, 5).toString("ascii") !== "%PDF-") throw new ApiError(400, "INVALID_PDF", "The uploaded file is not a valid PDF");
   let extractedText;
   try { extractedText = await extractResumeText(buffer, mimeType); }
-  catch (err) { if (err.status) throw new ApiError(err.status, err.code || "INVALID_RESUME", err.message); throw new ApiError(400, "RESUME_PARSE_FAILED", "Could not extract text from this resume. Use a text-based PDF or .txt file."); }
+  catch (err) {
+    if (err.status) throw new ApiError(err.status, err.code || "INVALID_RESUME", err.message);
+    if (err instanceof TypeError && mimeType === "text/plain") throw new ApiError(400, "INVALID_TEXT", "Text resumes must be UTF-8 encoded");
+    console.error("[candidate] resume text extraction failed:", err?.name, err?.message);
+    throw new ApiError(500, "RESUME_PARSE_FAILED", "The server could not read text from this resume. Please try again, or upload it as a .txt file.");
+  }
   const stored = await persistResume(buffer, displayName);
   const client = await getPool().connect();
   try {
