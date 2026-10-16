@@ -169,7 +169,7 @@ Get-Content db/queries/important_queries.sql     | docker exec -i talentmatch-db
 Get-Content db/demos/transaction_demo.sql        | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
 ```
 
-Final results (16 Oct 2026, clean rebuild): unit **85/85**, integration **147/147**, constraint tests 8/8 rejected, advanced-feature tests 27 PASS, transaction demo unchanged before/after. `important_queries.sql` currently runs 39 of 41 queries: Q27 and Q28 are refused by the migration 023 rule because their seeded application still has an interview scheduled (open issue, see [project report §13](docs/project-report.md#13-testing-results)). Every case: [docs/test-cases.md](docs/test-cases.md).
+Final results (16 Oct 2026, clean rebuild): unit **85/85**, integration **147/147**, constraint tests 8/8 rejected, advanced-feature tests 27 PASS, transaction demo unchanged before/after. `important_queries.sql` runs Q1–Q41 with `ON_ERROR_STOP` and exits 0. Every case: [docs/test-cases.md](docs/test-cases.md).
 
 ## Folder structure
 
