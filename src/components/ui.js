@@ -5,35 +5,40 @@
 // skeletons), status pills, icons, a fetch wrapper and formatters.
 //
 // Design rules, kept in one place so pages stay consistent:
-//   - neutral page (slate-50), white cards, 1px slate-200 border, 12px radius
-//   - ONE accent colour (indigo) for primary buttons, links, focus rings, bars
-//   - type scale: page title 2xl/3xl, section title base/semibold,
-//     muted labels xs/uppercase, body sm
+//   - off-white page (slate-50 = #F6F9FC), white cards with a hairline
+//     border and a soft layered shadow (shadow-card), 16px radius
+//   - ONE accent colour (indigo = #635BFF, see globals.css) for primary
+//     buttons, links, focus rings, bars; navy (slate-900) for text
+//   - type scale: page title 3xl/4xl tight tracking, section title
+//     base/semibold, muted labels xs/uppercase, body sm; numbers tabular
 //   - status colours mean the same thing everywhere (STATUS_STYLES)
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { formatDate, formatDateTime } from "@/lib/format-date";
 
 const focusRing = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2";
+// Small upward lift on hover; no movement for people who prefer reduced motion.
+const lift = "transition duration-150 ease-out hover:-translate-y-px motion-reduce:hover:translate-y-0";
 
-export const inputClass = "mt-1 block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:bg-slate-50 disabled:text-slate-500";
+const fieldBase = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-[0_1px_1px_rgb(10_37_64/0.04)] placeholder:text-slate-400 transition-colors focus:border-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/15";
+export const inputClass = `mt-1 block w-full ${fieldBase} disabled:bg-slate-50 disabled:text-slate-500`;
 // Same look without "block w-full mt-1", for controls that sit in a row and set their own width.
-export const inlineInputClass = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30";
-export const buttonClass = `inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
-export const secondaryClass = `inline-flex items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
-export const dangerClass = `inline-flex items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`;
+export const inlineInputClass = fieldBase;
+export const buttonClass = `group inline-flex items-center justify-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-[0_1px_2px_rgb(10_37_64/0.15)] hover:bg-indigo-700 hover:shadow-[0_4px_12px_-2px_rgb(99_91_255/0.45)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${lift} ${focusRing}`;
+export const secondaryClass = `inline-flex items-center justify-center gap-2 rounded-full border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-[0_1px_2px_rgb(10_37_64/0.06)] hover:border-slate-300 hover:text-slate-900 hover:shadow-[0_3px_8px_-2px_rgb(10_37_64/0.12)] disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0 ${lift} ${focusRing}`;
+export const dangerClass = `inline-flex items-center justify-center gap-2 rounded-full border border-red-200 bg-white px-3.5 py-2 text-sm font-semibold text-red-700 shadow-[0_1px_2px_rgb(10_37_64/0.06)] hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 ${lift} ${focusRing}`;
 export const labelClass = "block text-sm font-medium text-slate-700";
-export const cardClass = "rounded-xl border border-slate-200 bg-white p-5 sm:p-6";
-export const pageClass = "px-4 py-8 sm:px-6 lg:px-8";
-export const linkClass = `rounded font-medium text-indigo-600 hover:text-indigo-700 hover:underline ${focusRing}`;
-export const mutedLabelClass = "text-xs font-medium uppercase tracking-wide text-slate-500";
-export const sectionTitleClass = "text-base font-semibold text-slate-900";
-export const tableWrapClass = "relative overflow-x-auto rounded-xl border border-slate-200 bg-white";
+export const cardClass = "rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7";
+export const pageClass = "px-4 py-8 sm:px-6 sm:py-10 lg:px-8";
+export const linkClass = `rounded font-semibold text-indigo-600 hover:text-indigo-800 ${focusRing}`;
+export const mutedLabelClass = "text-xs font-semibold uppercase tracking-wider text-slate-500";
+export const sectionTitleClass = "text-base font-semibold tracking-tight text-slate-900";
+export const tableWrapClass = "relative overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-card";
 export const tableClass = "w-full min-w-[640px] text-left text-sm";
-export const theadClass = "border-b border-slate-200 bg-slate-50/60 text-xs font-medium uppercase tracking-wide text-slate-500";
-export const thClass = "whitespace-nowrap px-4 py-3 font-medium first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6";
-export const tdClass = "px-4 py-3 align-middle first:pl-5 last:pr-5 sm:first:pl-6 sm:last:pr-6";
-export const trClass = "border-b border-slate-100 last:border-0 hover:bg-slate-50/60";
+export const theadClass = "border-b border-slate-200 bg-slate-50/70 text-xs font-semibold uppercase tracking-wider text-slate-500";
+export const thClass = "whitespace-nowrap px-4 py-3 font-semibold first:pl-5 last:pr-5 sm:first:pl-7 sm:last:pr-7";
+export const tdClass = "px-4 py-4 align-middle first:pl-5 last:pr-5 sm:first:pl-7 sm:last:pr-7";
+export const trClass = "border-b border-slate-100 transition-colors last:border-0 hover:bg-indigo-50/40";
 
 // fetch() that never throws: { ok, status, body }. `json` is sent as JSON.
 export async function request(url, { json, ...options } = {}) {
@@ -66,9 +71,9 @@ export function errorLines(body, fallback) {
 export function Alert({ lines, kind = "error" }) {
   if (!lines?.length) return null;
   const style = kind === "error"
-    ? "border-red-200 bg-red-50 text-red-800"
-    : "border-emerald-200 bg-emerald-50 text-emerald-800";
-  return <div role={kind === "error" ? "alert" : "status"} className={`flex gap-3 rounded-xl border px-4 py-3 text-sm ${style}`}>
+    ? "border-red-200 bg-red-50/80 text-red-800"
+    : "border-emerald-200 bg-emerald-50/80 text-emerald-800";
+  return <div role={kind === "error" ? "alert" : "status"} className={`flex gap-3 rounded-xl border px-4 py-3 text-sm shadow-[0_1px_2px_rgb(10_37_64/0.04)] ${style}`}>
     <Icon name={kind === "error" ? "alert" : "check"} className="mt-0.5 h-4 w-4 shrink-0" />
     <div className="min-w-0">
       <p className="font-medium">{lines[0]}</p>
@@ -83,11 +88,11 @@ export function PageShell({ width = "max-w-6xl", children }) {
 }
 
 export function PageHeader({ title, description, actions, eyebrow }) {
-  return <header className="flex flex-wrap items-end justify-between gap-4">
+  return <header className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4 pb-2">
     <div className="min-w-0">
-      {eyebrow && <div className="mb-2 text-sm">{eyebrow}</div>}
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">{title}</h1>
-      {description && <p className="mt-1.5 max-w-3xl text-sm text-slate-600">{description}</p>}
+      {eyebrow && <div className="mb-3 text-sm">{eyebrow}</div>}
+      <h1 className="text-3xl font-semibold tracking-[-0.02em] text-slate-900 sm:text-4xl">{title}</h1>
+      {description && <p className="mt-2 max-w-3xl text-[15px] leading-relaxed text-slate-600">{description}</p>}
     </div>
     {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
   </header>;
@@ -108,8 +113,8 @@ export function Card({ title, description, actions, children, className = "" }) 
 
 export function EmptyState({ icon = "inbox", title, message, action, bare = false }) {
   return <div className={`${bare ? "" : `${cardClass} `}flex flex-col items-center justify-center px-6 py-10 text-center`}>
-    <span className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-500"><Icon name={icon} className="h-5 w-5" /></span>
-    <p className="mt-3 text-sm font-medium text-slate-900">{title}</p>
+    <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-50 to-sky-50 text-indigo-600 ring-1 ring-inset ring-indigo-100"><Icon name={icon} className="h-6 w-6" /></span>
+    <p className="mt-4 text-sm font-semibold text-slate-900">{title}</p>
     {message && <p className="mt-1 max-w-sm text-sm text-slate-500">{message}</p>}
     {action && <div className="mt-4">{action}</div>}
   </div>;
@@ -133,11 +138,11 @@ export function SkeletonList({ rows = 3, label = "Loading" }) {
 
 // --------------------------------------------------------------- status ----
 // One meaning per colour, used on every page:
-// applied gray · shortlisted blue · interviewed purple · offered green · rejected red
+// applied gray · shortlisted blue · interviewed violet · offered green · rejected red
 export const STATUS_STYLES = {
   applied: "bg-slate-100 text-slate-700 ring-slate-200",
   shortlisted: "bg-blue-50 text-blue-700 ring-blue-200",
-  interviewed: "bg-purple-50 text-purple-700 ring-purple-200",
+  interviewed: "bg-violet-50 text-violet-700 ring-violet-200",
   offered: "bg-emerald-50 text-emerald-700 ring-emerald-200",
   rejected: "bg-red-50 text-red-700 ring-red-200",
   // jobs
@@ -161,16 +166,18 @@ export const STATUS_STYLES = {
 
 // Solid colour of each pipeline stage, for chart bars and timeline dots.
 export const STAGE_DOT = {
-  applied: "bg-slate-400", shortlisted: "bg-blue-500", interviewed: "bg-purple-500", offered: "bg-emerald-500", rejected: "bg-red-500",
+  applied: "bg-slate-400", shortlisted: "bg-blue-500", interviewed: "bg-violet-500", offered: "bg-emerald-500", rejected: "bg-red-500",
 };
 
 export function StatusBadge({ status }) {
-  return <span className={`inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 align-middle text-xs font-medium capitalize ring-1 ring-inset ${STATUS_STYLES[status] || "bg-slate-100 text-slate-700 ring-slate-200"}`}>{status.replace("_", " ")}</span>;
+  return <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 align-middle text-xs font-semibold capitalize ring-1 ring-inset ${STATUS_STYLES[status] || "bg-slate-100 text-slate-700 ring-slate-200"}`}>
+    <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current opacity-70" />{status.replace("_", " ")}
+  </span>;
 }
 
 // Small neutral tag (skills, counts).
 export function Tag({ children, className = "" }) {
-  return <span className={`inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700 ${className}`}>{children}</span>;
+  return <span className={`inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 ${className}`}>{children}</span>;
 }
 
 // ---------------------------------------------------------------- icons ----
@@ -188,6 +195,12 @@ const ICONS = {
   inbox: "M2.25 13.5h3.86a2.25 2.25 0 0 1 2.01 1.24l.27.53a2.25 2.25 0 0 0 2.01 1.24h3.2a2.25 2.25 0 0 0 2.01-1.24l.27-.53a2.25 2.25 0 0 1 2.01-1.24h3.86M2.25 13.5V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.5m-19.5 0 2.48-7.69A2.25 2.25 0 0 1 6.88 4.5h10.24a2.25 2.25 0 0 1 2.14 1.31l2.49 7.69",
   sparkles: "M9.81 15.9 9 18.75l-.81-2.85a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.85-.81a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.81 2.85a4.5 4.5 0 0 0 3.09 3.09l2.85.81-2.85.81a4.5 4.5 0 0 0-3.09 3.09ZM18.26 8.72 18 9.75l-.26-1.03a3.38 3.38 0 0 0-2.46-2.46L14.25 6l1.03-.26a3.38 3.38 0 0 0 2.46-2.46L18 2.25l.26 1.03a3.38 3.38 0 0 0 2.46 2.46l1.03.26-1.03.26a3.38 3.38 0 0 0-2.46 2.46Z",
   plus: "M12 4.5v15m7.5-7.5h-15",
+  arrowRight: "M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3",
+  shield: "M9 12.75 11.25 15 15 9.75m-3-7.04A11.96 11.96 0 0 1 3.6 6 12 12 0 0 0 3 9.75c0 5.6 3.82 10.3 9 11.62 5.18-1.33 9-6.03 9-11.62 0-1.31-.21-2.57-.6-3.75h-.15c-3.2 0-6.1-1.25-8.25-3.29Z",
+  database: "M20.25 6.38c0 2.27-3.69 4.12-8.25 4.12S3.75 8.65 3.75 6.38m16.5 0c0-2.28-3.69-4.13-8.25-4.13S3.75 4.1 3.75 6.38m16.5 0v11.25c0 2.28-3.69 4.12-8.25 4.12s-8.25-1.84-8.25-4.12V6.38m16.5 5.62c0 2.28-3.69 4.13-8.25 4.13S3.75 14.28 3.75 12",
+  upload: "M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5",
+  cube: "m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9",
+  target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-4.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9Zm0-3.75a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Z",
   menu: "M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5",
   close: "M6 18 18 6M6 6l12 12",
   chevronDown: "m19.5 8.25-7.5 7.5-7.5-7.5",
@@ -204,6 +217,42 @@ export function Icon({ name, className = "h-5 w-5" }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={className}>
     <path d={ICONS[name] || ICONS.inbox} />
   </svg>;
+}
+
+// Arrow that slides a little on hover of the parent `group` (main CTAs).
+export function CtaArrow() {
+  return <Icon name="arrowRight" className="h-4 w-4 transition-transform duration-150 group-hover:translate-x-0.5 motion-reduce:group-hover:translate-x-0" />;
+}
+
+// TalentMatch logo mark: two overlapping circles (a resume and a job
+// "matching") on a gradient tile. Drawn here, no image file.
+export function LogoMark({ className = "h-8 w-8" }) {
+  const id = useId();
+  return <svg aria-hidden="true" viewBox="0 0 32 32" className={className}>
+    <defs>
+      <linearGradient id={`${id}-g`} x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="#635BFF" />
+        <stop offset="0.6" stopColor="#7A5CFF" />
+        <stop offset="1" stopColor="#00B8E6" />
+      </linearGradient>
+    </defs>
+    <rect width="32" height="32" rx="9" fill={`url(#${id}-g)`} />
+    <circle cx="12.5" cy="16" r="6" fill="none" stroke="#fff" strokeWidth="2.2" />
+    <circle cx="19.5" cy="16" r="6" fill="none" stroke="#fff" strokeOpacity="0.75" strokeWidth="2.2" />
+  </svg>;
+}
+
+// Match score as the exact number plus a slim bar (cosine similarity, 0 to 1
+// in practice). null = not computed yet, shown as text, never as 0.
+export function ScoreMeter({ score, className = "w-32", size = "sm" }) {
+  if (score == null) return <span className="inline-flex whitespace-nowrap rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600" title="Resume or job not embedded yet">not scored</span>;
+  const pct = Math.max(0, Math.min(100, score * 100));
+  return <div className={className}>
+    <p className={`font-semibold tabular-nums tracking-tight text-slate-900 ${size === "lg" ? "text-xl" : "text-sm"}`}>{formatScore(score)}</p>
+    <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+      <div className="h-full rounded-full bg-gradient-to-r from-indigo-600 to-sky-400" style={{ width: `${pct}%` }} />
+    </div>
+  </div>;
 }
 
 // ----------------------------------------------------------- formatting ----
@@ -228,9 +277,9 @@ export function formatSalary(job) {
 
 // Vertical status timeline built from application_status_history rows.
 export function StatusTimeline({ history }) {
-  return <ol className="relative ml-2 border-l border-slate-200">
+  return <ol className="relative ml-2 border-l-2 border-slate-100">
     {history.map((h, i) => <li key={i} className="mb-3 ml-4 last:mb-0">
-      <span className={`absolute -left-1.5 mt-1.5 h-3 w-3 rounded-full border-2 border-white ${STAGE_DOT[h.newStatus] || "bg-slate-400"}`} />
+      <span className={`absolute -left-[7px] mt-1.5 h-3 w-3 rounded-full border-2 border-white shadow-sm ${STAGE_DOT[h.newStatus] || "bg-slate-400"}`} />
       <p className="text-sm text-slate-800">
         {h.oldStatus ? <><span className="capitalize text-slate-500">{h.oldStatus}</span> → </> : null}
         <StatusBadge status={h.newStatus} />

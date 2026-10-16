@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, EmptyState, errorLines, formatDateTime, formatScore, mutedLabelClass, PageHeader, PageShell, request, SkeletonList, StatusBadge, StatusTimeline,
+  Alert, buttonClass, cardClass, CtaArrow, EmptyState, errorLines, formatDateTime, mutedLabelClass, PageHeader, PageShell, request, ScoreMeter, SkeletonList, StatusBadge, StatusTimeline,
 } from "@/components/ui";
 
 export default function MyApplications() {
@@ -21,7 +21,7 @@ export default function MyApplications() {
       <Alert lines={error} />
       {apps === null ? !error && <SkeletonList label="Loading applications" />
         : apps.length === 0 ? <EmptyState icon="file" title="No applications yet" message="When you apply to a job, its status and match score show up here."
-            action={<Link href="/candidate/jobs" className={buttonClass}>Browse open jobs</Link>} />
+            action={<Link href="/candidate/jobs" className={buttonClass}>Browse open jobs<CtaArrow /></Link>} />
         : <ul className="space-y-3">{apps.map((a) => <li key={a.id} className={cardClass}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -30,12 +30,12 @@ export default function MyApplications() {
               </h2>
               <p className="text-sm text-slate-600">{a.company} · {a.location} · applied {formatDateTime(a.appliedAt)}{a.jobStatus !== "open" && ` · job ${a.jobStatus}`}</p>
               <p className="text-xs text-slate-500">Resume sent: {a.resumeFileName || "deleted"}</p>
-              {a.nextInterviewAt && <p className="mt-1 text-sm text-purple-700">Next interview: {formatDateTime(a.nextInterviewAt)}</p>}
+              {a.nextInterviewAt && <p className="mt-1 text-sm text-violet-700">Next interview: {formatDateTime(a.nextInterviewAt)}</p>}
               {a.offerStatus && <p className="mt-1 text-sm text-emerald-800">Offer: {a.offerStatus} · <Link href="/candidate/offers" className="underline">view offer</Link></p>}
             </div>
-            <div className="flex items-baseline gap-1.5 sm:block sm:text-right">
-              <p className="font-mono text-lg text-slate-900">{formatScore(a.matchScore)}</p>
-              <p className={mutedLabelClass}>match score</p>
+            <div className="w-full sm:w-40">
+              <p className={`${mutedLabelClass} mb-1`}>match score</p>
+              <ScoreMeter score={a.matchScore} size="lg" className="w-full" />
             </div>
           </div>
           <div className="mt-4"><StatusTimeline history={a.history} /></div>
