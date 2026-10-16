@@ -1,53 +1,106 @@
 # TalentMatch
 
-AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a DBMS Level 3 mini-project (PES University, CSE, Section D).
+**AI-Assisted Resume-to-Job Matching and Recruitment Management System** — DBMS Experiential Learning, Level 3 mini-project (PES University, CSE, Section D).
 
 **Team:** Rohith Karning (PES1UG24AM229) · Saanvi Maharana (PES1UG24AM237)
 
-**Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
+TalentMatch is a recruitment system for companies that receive many resumes per opening. It ranks candidates by the **meaning** of their resume, not only by keywords: resumes and job descriptions are turned into 384-number embeddings, stored in PostgreSQL with **pgvector**, and compared with cosine similarity. Around that sits a full hiring pipeline (apply → shortlist → interview → offer → accept/decline, or reject) whose rules are enforced **inside the database** with constraints, triggers, functions, views and transactions.
 
-> Status: Stage 9 is done: a security review of every API route ([docs/security-review.md](docs/security-review.md)), security headers, a stricter CSRF check, two data-consistency rules enforced by the database (rejecting an application withdraws its pending offer; an interview cannot be completed before its time), demo data with an accepted and a declined offer, and one final test table ([docs/test-cases.md](docs/test-cases.md)). Stages 1–8 cover the schema, triggers/functions/views, auth, the candidate module, pgvector matching, the recruiter module, interviews/offers/notifications, and the admin module with its dashboard.
+The complete project report (all 14 documentation sections required by the course) is [docs/project-report.md](docs/project-report.md).
 
-## Prerequisites
+## Features by role
 
-- Node.js 22 (the db scripts use `node --env-file-if-exists`, which needs Node 22.9 or newer)
-- Docker Desktop (Windows: WSL 2 backend)
+**Candidate**
+- Register, log in, edit profile and skills (proficiency 1–5).
+- Upload resumes (PDF or TXT, at most 5 MB, at least 50 characters of text), choose a primary resume; each resume is embedded automatically.
+- Search and filter open jobs (keyword, location, work mode, employment type, experience).
+- See the skill gap for a job (have / below level / missing).
+- Apply with a chosen resume and get a real cosine match score; track every application with its status history.
+- See interviews; accept or decline offers before they expire; notifications inbox.
 
-## Setup (Windows PowerShell)
+**Recruiter** (accounts are created by the admin; a recruiter works only on their own company's data)
+- Create, edit, open/close and delete jobs with required skills.
+- See applicants ranked by match score with matched/required skills, and search *all* candidates by semantic similarity.
+- Move applications through the allowed stages (invalid moves are refused by the database with a readable message).
+- Schedule, reschedule, cancel and complete interviews (rating and internal feedback); make and withdraw offers.
+
+**Admin**
+- Dashboard: platform totals, applications per stage, top demanded skills, average match score by outcome, per-company table (offer acceptance rate, interview rating), per-job funnel.
+- Manage companies (deleting a company that still has recruiters or jobs is refused by the database) and recruiter accounts (create, edit, move, deactivate).
+
+## Tech stack
+
+| Area | Choice |
+|---|---|
+| Frontend | Next.js 16 (App Router), React 19, plain JavaScript, Tailwind CSS 4 |
+| Backend | Next.js Route Handlers (`src/app/api`) |
+| Database | PostgreSQL 17 + pgvector 0.8 in one database (Docker image `pgvector/pgvector:pg17`) |
+| DB access | Raw parameterized SQL with `pg` (connection pool), no ORM |
+| Auth | `bcryptjs` password hashes, JWT (`jose`, HS256) in an httpOnly cookie |
+| Validation | `zod` in the API; CHECK / NOT NULL / UNIQUE / FK constraints and triggers in the database |
+| Embeddings | `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions), run locally with `@huggingface/transformers` |
+| PDF text | `pdfjs-dist` |
+| Tests | Node's built-in `node:test` runner |
+
+## Architecture
+
+```
+Browser (React pages)
+   │  fetch JSON, httpOnly session cookie
+   ▼
+Next.js server ─ Route Handlers ─ withAuth (JWT + DB re-read + role check) ─ zod + same-origin check
+   │                                   │
+   │                                   ├── src/lib/*  raw SQL via pg Pool ($1, $2 … parameters only)
+   │                                   └── embedding model (local, loaded once per process)
+   ▼
+PostgreSQL 17 + pgvector (Docker, localhost:5433)
+   16 tables · 57 CHECK · 22 FK · 19 triggers · 6 functions · 3 views · HNSW indexes on vector(384)
+```
+
+The database is the final authority: even a direct `UPDATE` in psql cannot skip a pipeline stage, create a second offer, or store a plaintext password. Details: [project report §11](docs/project-report.md#11-system-architecture).
+
+## Setup from a clean machine (Windows PowerShell)
+
+**Prerequisites**
+- Git
+- Node.js **22.9 or newer** (the scripts use `node --env-file-if-exists`)
+- Docker Desktop (Windows: WSL 2 backend), running
+- Internet access once, for `npm install` and the first model download (~90 MB)
 
 ```powershell
-# 1. Install dependencies
+# 1. Get the code and install dependencies
+git clone https://github.com/rohithkarning-debug/TalentMatch.git
+cd TalentMatch
 npm install
 
-# 2. Create your local env file, then edit it:
-#    - set a strong POSTGRES_PASSWORD (and the same password inside DATABASE_URL)
-#    - set AUTH_JWT_SECRET to a random value (the placeholder is refused):
+# 2. Create your local env file from the template, then edit .env.local:
+#    - set a strong POSTGRES_PASSWORD and put the same password inside DATABASE_URL
+#    - set AUTH_JWT_SECRET to a random value (the placeholder is refused). Generate one with:
 #        node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
 Copy-Item .env.example .env.local
+notepad .env.local
 
-# 3. Start PostgreSQL + pgvector (Docker Desktop must be running)
+# 3. Start PostgreSQL + pgvector (port 5433 on localhost)
 docker compose --env-file .env.local up -d --wait
 
-# 4. Create the tables and load demo data
+# 4. Create the schema (migrations 001-024) and load the fictional demo data
 npm run db:migrate
 npm run db:seed
 
-# 5. Create embeddings for the seeded resumes and jobs (first run downloads
-#    the ~90 MB MiniLM model into .cache/transformers; needs internet once)
+# 5. Embed the seeded resumes and jobs (first run downloads the model into .cache/transformers)
 npm run db:embed
 
-# 6. Start the app (development mode, reloads on save)
-npm run dev
-
-#    ...or the production build, as used by the integration tests
+# 6a. Production build (what the integration tests use)
 npm run build
 npm start
+
+# 6b. ...or development mode with reload on save
+npm run dev
 ```
 
-Open http://localhost:3000/api/health. You should see `"status":"ok"`, the PostgreSQL version number, and the pgvector version.
-Then open http://localhost:3000 and sign in with a demo account below, or create a candidate account at `/register`.
+Check http://localhost:3000/api/health — it returns `"status":"ok"` with the PostgreSQL and pgvector versions. Then open http://localhost:3000 and sign in with a demo account below.
 
-**Starting over with a clean database** (destructive; only works on the local Docker database):
+**Start over with a clean database** (destructive; refuses anything except the local Docker database):
 
 ```powershell
 npm run db:reset -- --yes
@@ -56,138 +109,124 @@ npm run db:seed
 npm run db:embed
 ```
 
-## Authentication
+Stop the database with `docker compose --env-file .env.local stop`; the data stays in the `talentmatch_pgdata` volume.
 
-Login uses an httpOnly session cookie that holds a signed JWT. Every API route checks the role on the server. Public registration creates **candidate** accounts only. Details: [docs/authentication.md](docs/authentication.md).
+## Demo accounts
 
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/auth/register` | Create a candidate account (201 / 400 / 409) |
-| `POST /api/auth/login` | Log in (200 / 400 / 401 / 403) |
-| `POST /api/auth/logout` | Clear the session cookie (200) |
-| `GET /api/auth/me` | Current user `{id, email, fullName, role}` (200 / 401) |
-
-## Tests
-
-Integration tests need the database migrated, seeded and embedded (setup steps 4–5). They create their own `@test.example` accounts and delete them afterwards.
-
-```powershell
-npm run test:unit          # unit tests (no server/DB needed; embedding tests use the cached model)
-npm run build              # integration tests use the production build
-npm run test:integration   # starts the app (ports 3100-3105) and tests the real API + DB + model
-```
-
-## Semantic matching
-
-Resumes and jobs are embedded locally with `sentence-transformers/all-MiniLM-L6-v2` (384 dimensions) and stored in pgvector columns. `rank_candidates_for_job(job_id, limit, applicants_only)` ranks candidates by cosine similarity `1 - (resume <=> job)`. Details: [docs/vector-design.md](docs/vector-design.md).
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/recruiter/jobs/:jobId/matches?applicantsOnly=true\|false&limit=N` | Ranked candidates for a job of the recruiter's own company (200 / 400 / 401 / 403 / 404) |
-
-## Recruiter module and applications (Stage 6)
-
-Pages: recruiter `/recruiter` (My Jobs), `/recruiter/jobs/new`, `/recruiter/jobs/:id` (tabs "Ranked applicants" and "Search all candidates"), `/recruiter/jobs/:id/edit`. Candidate: `/candidate/jobs/:id` (skill gap and Apply), `/candidate/applications`.
-
-| Endpoint | Purpose |
-|---|---|
-| `GET / POST /api/recruiter/jobs` | List / create jobs of the recruiter's company (job is embedded after COMMIT) |
-| `GET / PATCH / DELETE /api/recruiter/jobs/:jobId` | View, edit (fields, status draft/open/closed, skills), delete; 403 for other companies, 409 if the job has applications |
-| `GET /api/recruiter/jobs/:jobId/applications` | Applicants ranked by `match_score`, with matched/required skills and history |
-| `PATCH /api/recruiter/applications/:applicationId` | Change status via `update_application_status()`; invalid transitions → 409 with the database's message |
-| `GET / POST /api/candidate/applications` | My applications with history / apply (one transaction; 409 duplicate or closed job) |
-| `GET /api/candidate/jobs/:jobId` | Job details, skill gap (`EXCEPT`), and my application |
-| `GET /api/skills` | Skill catalogue (any signed-in user) |
-
-`applications.match_score` = `compute_match_score(resume, job)` = `1 - (resume <=> job)` for the resume chosen when applying, or NULL if either side is not embedded yet. `npm run db:embed` fills in such NULL scores later. Details: [advanced-features.md §7–8](docs/advanced-features.md).
-
-## Interviews, offers and notifications (Stage 7)
-
-Pages: recruiter `/recruiter/interviews`, `/recruiter/offers` ("Schedule interview" and "Make offer" are on each applicant in `/recruiter/jobs/:id`). Candidate: `/candidate/interviews`, `/candidate/offers`. Every role: `/notifications`.
-
-| Endpoint | Purpose |
-|---|---|
-| `POST /api/recruiter/applications/:applicationId/interviews` | Schedule the next round (future time; link or location). The first one moves the application `shortlisted → interviewed` in the same transaction and notifies the candidate |
-| `GET /api/recruiter/interviews?scope=upcoming\|past\|all` | Interviews for the recruiter's company |
-| `PATCH /api/recruiter/interviews/:interviewId` | `{ action: "reschedule" \| "cancel" \| "complete" }`; only scheduled interviews change (409 otherwise); rating 1–5 |
-| `POST /api/recruiter/applications/:applicationId/offer` | **Transaction:** status → `offered` (only from `interviewed`) + offer row + notification; 409 if an offer exists or the transition is invalid |
-| `GET /api/recruiter/offers` · `POST /api/recruiter/offers/:offerId/withdraw` | Company offers / withdraw a pending offer (application → `rejected`) |
-| `GET /api/candidate/interviews` · `GET /api/candidate/offers` | Own interviews (no internal rating/feedback) / own offers |
-| `POST /api/candidate/offers/:offerId/respond` | `{ decision: "accept" \| "decline" }` before expiry; notifies the recruiters; someone else's offer → 404 |
-| `GET /api/notifications` · `PATCH /api/notifications/:id` · `POST /api/notifications/read-all` | Own inbox with unread count / mark read (others' → 404) / mark all read |
-
-Details and the transaction diagrams: [advanced-features.md §9–11](docs/advanced-features.md). Queries Q27–Q32 in `db/queries/important_queries.sql`.
-
-## Admin module and dashboard (Stage 8)
-
-Pages (admin only, checked on the server): `/admin` (dashboard), `/admin/companies`, `/admin/recruiters`. Signed-in users opening `/` go to their role's home page.
-
-| Endpoint | Purpose |
-|---|---|
-| `GET /api/admin/dashboard` | KPI totals, applications per stage, top skills of open jobs (GROUP BY + HAVING), average match score by status, per-company table (offer acceptance, interview rating, above-average flag), per-job funnel from `generate_hiring_pipeline_report()` |
-| `GET / POST /api/admin/companies` | List with recruiter/job/application counts / create (unique name → 409) |
-| `GET / PATCH / DELETE /api/admin/companies/:companyId` | Read, edit any subset of fields, delete. A company with recruiters or jobs → **409 `COMPANY_IN_USE`** (the database refuses; the message gives the counts) |
-| `GET / POST /api/admin/recruiters` | List with workload from `recruiter_pipeline_view` / create: bcrypt hash, then users + recruiters in **one transaction** |
-| `GET / PATCH /api/admin/recruiters/:recruiterId` | Edit name, company, designation, phone; `isActive: false` blocks login (403) and the current session (401). Moving a recruiter who owns jobs → 409 (composite FK) |
-
-Recruiters and candidates get **403** and anonymous requests **401** on every admin route. Details: [advanced-features.md §12–13](docs/advanced-features.md). Queries Q33–Q41 in `db/queries/important_queries.sql`. Screenshots: `docs/screenshots/stage8/`.
-
-## Database scripts
-
-| Command | What it does |
-|---|---|
-| `npm run db:migrate` | Applies new files in `db/migrations/` in order. Already-applied files are skipped (tracked in `tm_meta.schema_migrations`). |
-| `npm run db:seed` | Loads fictional demo data from `db/seed/seed.sql`. Safe to run more than once. |
-| `npm run db:embed` | Embeds every resume and job that has no embedding yet (or whose text or model changed), then fills in any NULL application match scores. Safe to run more than once. |
-| `npm run db:reset` | **Destructive.** Drops all TalentMatch tables and data. It only works on the local Docker dev database and asks you to type the database name. Add `-- --yes` to skip the prompt. |
-
-SQL scripts (PowerShell, from the project root):
-
-```powershell
-Get-Content db/tests/stage1_constraint_tests.sql  | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
-Get-Content db/tests/stage2_advanced_tests.sql    | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
-Get-Content db/queries/important_queries.sql      | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
-Get-Content db/demos/transaction_demo.sql         | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
-```
-
-## Demo accounts (local development only)
-
-All demo accounts use the password **`TalentMatch@2026`**. Only its bcrypt hash is stored in the database. All people and companies are fictional.
+All demo accounts use the password **`TalentMatch@2026`** (only its bcrypt hash is in the database). Every person and company is fictional.
 
 | Role | Email | Notes |
 |---|---|---|
 | Admin | admin@talentmatch.example | |
-| Recruiter | meera.iyer@nimbusanalytics.example | Nimbus Analytics |
-| Recruiter | arjun.rao@nimbusanalytics.example | Nimbus Analytics |
-| Recruiter | kavya.menon@kestrellabs.example | Kestrel Software Labs |
-| Recruiter | rahul.kamath@orbitline.example | Orbitline Cloud Systems |
-| Candidate | aditi.sharma@mail.example | ML engineer |
-| Candidate | rohan.verma@mail.example | Data scientist (has a pending offer) |
-| Candidate | sneha.kulkarni@mail.example | Frontend |
+| Recruiter | meera.iyer@nimbusanalytics.example | Nimbus Analytics — ML Engineer, NLP Intern |
+| Recruiter | arjun.rao@nimbusanalytics.example | Nimbus Analytics — Data Analyst |
+| Recruiter | kavya.menon@kestrellabs.example | Kestrel Software Labs — Frontend, Backend, Full Stack (draft) |
+| Recruiter | rahul.kamath@orbitline.example | Orbitline Cloud Systems — SRE (closed), DevOps |
+| Candidate | aditi.sharma@mail.example | ML engineer; interviewed for ML Engineer, round 2 scheduled |
+| Candidate | rohan.verma@mail.example | Data scientist; **pending offer** for ML Engineer |
+| Candidate | sneha.kulkarni@mail.example | Frontend; interviewed, round 2 scheduled |
 | Candidate | vikram.chauhan@mail.example | Frontend |
 | Candidate | ananya.gupta@mail.example | Backend (Node.js) |
 | Candidate | karthik.subramanian@mail.example | Backend (Java) |
-| Candidate | ishita.banerjee@mail.example | Data analyst |
+| Candidate | ishita.banerjee@mail.example | Data analyst; shortlisted |
 | Candidate | farhan.qureshi@mail.example | Data analyst |
-| Candidate | neha.bhatt@mail.example | DevOps (accepted the SRE offer) |
+| Candidate | neha.bhatt@mail.example | DevOps; **accepted** the SRE offer |
 | Candidate | siddharth.pillai@mail.example | SRE / DevOps |
-| Candidate | divya.krishnan@mail.example | Graduate ML / NLP |
-| Candidate | aman.malhotra@mail.example | Full stack (declined the Backend offer) |
+| Candidate | divya.krishnan@mail.example | Graduate ML / NLP; shortlisted |
+| Candidate | aman.malhotra@mail.example | Full stack; **declined** the Backend offer |
+
+## npm scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Development server on port 3000 |
+| `npm run build` | Production build |
+| `npm start` | Run the production build on port 3000 |
+| `npm run db:migrate` | Apply new files in `db/migrations/` in order, each in its own transaction. Applied files are recorded with a SHA-256 checksum in `tm_meta.schema_migrations`; an edited applied migration is refused |
+| `npm run db:seed` | Load the fictional demo data (`db/seed/seed.sql`, one transaction, safe to re-run) |
+| `npm run db:embed` | Embed every resume and job that has no embedding or a stale one, then fill any NULL match scores (safe to re-run) |
+| `npm run db:reset` | **Destructive.** Drop all TalentMatch objects; only works on the local Docker database and asks for confirmation (`-- --yes` skips it) |
+| `npm run test:unit` | Unit tests (no server or database needed) |
+| `npm run test:integration` | Integration tests: starts the production build on ports 3100–3105 and tests the real API, database and model |
+| `npm test` | Both test suites |
+
+## Testing
+
+Integration tests need the database migrated, seeded and embedded, and a fresh production build. They create their own `@test.example` accounts and delete them afterwards.
+
+```powershell
+npm run test:unit
+npm run build
+npm run test:integration
+```
+
+SQL test scripts and demonstrations (run from the project root):
+
+```powershell
+Get-Content db/tests/stage1_constraint_tests.sql | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/tests/stage2_advanced_tests.sql   | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/queries/important_queries.sql     | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+Get-Content db/demos/transaction_demo.sql        | docker exec -i talentmatch-db psql -U talentmatch -d talentmatch
+```
+
+Final results (16 Oct 2026, clean rebuild): unit **85/85**, integration **147/147**, constraint tests 8/8 rejected, advanced-feature tests 27 PASS, transaction demo unchanged before/after. `important_queries.sql` currently runs 39 of 41 queries: Q27 and Q28 are refused by the migration 023 rule because their seeded application still has an interview scheduled (open issue, see [project report §13](docs/project-report.md#13-testing-results)). Every case: [docs/test-cases.md](docs/test-cases.md).
+
+## Folder structure
+
+```
+db/
+  init/                 runs once when the Docker volume is created (enables pgvector)
+  migrations/           001-024 numbered SQL migrations (never edited once applied)
+  seed/seed.sql         fictional demo data
+  queries/              important_queries.sql (41 commented queries)
+  demos/                transaction_demo.sql (COMMIT, ROLLBACK, SAVEPOINT)
+  tests/                SQL constraint and advanced-feature tests
+  reset.sql             drops every TalentMatch object
+scripts/                migrate, seed, embed, reset (+ lib/ safety checks)
+src/
+  app/                  pages per role (candidate, recruiter, admin, notifications, login, register)
+  app/api/              route handlers (36 files)
+  components/           UI components
+  lib/                  db pool, auth, validation, embeddings, vector store, business logic
+tests/
+  unit/                 node:test unit tests
+  integration/          node:test API + database tests
+  fixtures/             sample resume files
+docs/                   project report, design docs, screenshots, viva demo script
+docker-compose.yml      PostgreSQL 17 + pgvector container
+.env.example            variable names and placeholders only
+```
+
+## Security notes
+
+- **Passwords:** bcrypt (cost 12). A CHECK constraint rejects anything that is not a bcrypt hash, so a plaintext password cannot be stored even by mistake.
+- **Sessions:** JWT signed with HS256 in the `tm_session` cookie: `HttpOnly`, `SameSite=Lax`, `Secure` in production, 8 hours. On every request the user is re-read from the database, so a disabled account or changed role takes effect immediately.
+- **Authorization:** every route handler checks the role on the server (`withAuth`). Ownership is part of the SQL (`WHERE … AND candidate_id = <session user>`); another user's record answers 404, another company's record 403. Public registration can only create candidates.
+- **SQL injection:** every value is a `$n` parameter; no user input is ever concatenated into SQL.
+- **CSRF:** `SameSite=Lax` cookie, Origin / `Sec-Fetch-Site` check on every state-changing route, JSON-only bodies.
+- **Login rate limit:** 5 failed attempts per email + IP per 15 minutes → 429.
+- **Headers:** `nosniff`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, Referrer-Policy, Permissions-Policy; no `X-Powered-By`.
+- **Secrets:** only in `.env.local`, which is gitignored; `.env.example` holds placeholders. `docker-compose.yml` reads the password from the env file.
+- **Uploads:** PDF/TXT only, extension + MIME + `%PDF-` magic bytes checked, 5 MB limit, stored under random names in `uploads/` (gitignored).
+
+Known limitations (in-memory rate limiter, stateless JWT, no `script-src` CSP): [docs/security-review.md](docs/security-review.md#5-known-limitations-not-fixed).
 
 ## Documentation
 
-- [ER diagram](docs/er-diagram.md) (Mermaid)
-- [Relational schema](docs/relational-schema.md), including why PostgreSQL + pgvector share one database
+- [Project report](docs/project-report.md) — all 14 required sections, team contribution
+- [Viva demo script](docs/viva-demo-script.md) — 10-minute demo, live psql queries, 30 likely questions
+- [ER diagram](docs/er-diagram.md) ([image](docs/er-diagram.png))
+- [Relational schema](docs/relational-schema.md) — tables, FK delete rules, indexes, normalisation
 - [Data dictionary](docs/data-dictionary.md)
-- [Advanced SQL features](docs/advanced-features.md): triggers, functions, views, queries, transactions
-- [Vector design](docs/vector-design.md): embeddings, chunking, HNSW, cosine ranking
+- [Advanced SQL features](docs/advanced-features.md) — triggers, functions, views, transactions
+- [Vector design](docs/vector-design.md) — embeddings, chunking, HNSW, cosine ranking
 - [Authentication and RBAC](docs/authentication.md)
-- [Security review](docs/security-review.md): every API route's checks, headers, secrets audit
+- [Security review](docs/security-review.md)
 - [Test cases and results](docs/test-cases.md)
+- [Screenshots](docs/screenshots/final/)
 
 ## Notes
 
-- The database listens on **localhost:5433** (not 5432), so it does not clash with a natively installed PostgreSQL. You can change this with `POSTGRES_PORT`.
-- `db/init/001_enable_pgvector.sql` runs only when the Docker volume is first created. Migration `001` also enables `vector`, so migrations work on any database.
-- Stop the DB with `docker compose --env-file .env.local stop`. Your data stays in the `talentmatch_pgdata` volume.
+- The database listens on **localhost:5433** so it does not clash with a native PostgreSQL on 5432 (change it with `POSTGRES_PORT`).
+- `db/init/001_enable_pgvector.sql` runs only when the Docker volume is first created; migration 001 also enables `vector`, so migrations work on any database.
 - Never commit `.env.local`. Only `.env.example` is tracked.
