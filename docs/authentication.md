@@ -10,7 +10,8 @@
 | Authorization | Server-side guards in every route handler | `src/lib/auth/guards.js` |
 | Validation | `zod` schemas shared by API and forms, plus DB CHECK/UNIQUE constraints | `src/lib/validation/auth.js` |
 | Errors | One JSON format `{ error: { code, message, details? } }` | `src/lib/api/errors.js` |
-| CSRF defence | `SameSite=Lax` cookie + Origin check + JSON-only bodies | `src/lib/api/request.js` |
+| CSRF defence | `SameSite=Lax` cookie + Origin / `Sec-Fetch-Site` check + JSON-only bodies | `src/lib/api/request.js` |
+| Security headers (Stage 9) | `nosniff`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, Referrer-Policy, Permissions-Policy; no `X-Powered-By` | `next.config.mjs` |
 
 Roles: `admin`, `recruiter`, `candidate` (the `users.role` CHECK constraint from migration 002).
 
@@ -69,7 +70,7 @@ Tokens are **never** stored in `localStorage` or `sessionStorage`. The forms onl
 **Logout** overwrites the cookie with an empty value and `Max-Age=0`, using the same name, path and flags.
 
 **Extra CSRF layers:**
-- `assertSameOrigin()` rejects state-changing requests whose `Origin` header is a different site (403 `CROSS_ORIGIN`).
+- `assertSameOrigin()` rejects state-changing requests whose `Origin` header is a different site (403 `CROSS_ORIGIN`). Since Stage 9 it also rejects `Sec-Fetch-Site: cross-site` or `same-site` even when `Origin` is missing. Browsers set that header themselves and a web page cannot change it. Requests with neither header (curl, the tests) are not from a browser, so CSRF does not apply to them.
 - Login and register accept only `Content-Type: application/json` (415 otherwise). An HTML form on another site cannot send JSON.
 
 ## 5. Authorization helpers (`src/lib/auth/guards.js`)
@@ -137,7 +138,7 @@ Creates `users` (role `candidate`) and `candidates` in **one transaction**, then
 |---|---|
 | 201 | `{ "user": { "id", "email", "fullName", "role": "candidate" } }` + Set-Cookie |
 | 400 `VALIDATION_ERROR` | Invalid fields, extra fields (e.g. `role`), malformed JSON |
-| 403 `CROSS_ORIGIN` | Origin header from another site |
+| 403 `CROSS_ORIGIN` | Origin header from another site, or `Sec-Fetch-Site: cross-site` / `same-site` |
 | 409 `EMAIL_TAKEN` | Email already registered (any letter case) |
 | 413 / 415 | Body > 16 KB / not `application/json` |
 
@@ -204,3 +205,7 @@ Results are recorded in [test-cases.md](test-cases.md#stage-3--authentication-an
 - **No rate limiting or lockout** on login. bcrypt cost 12 slows guessing but does not stop it. A production deployment would add per-IP and per-account limits.
 - **Registration reveals that an email exists** (409 `EMAIL_TAKEN`). This is the usual sign-up trade-off; login itself does not reveal it.
 - **No email verification or password reset** in this project's scope.
+- **No `script-src` Content-Security-Policy** (Stage 9). The CSP only sets `frame-ancestors`, `base-uri`, `object-src` and `form-action`. Restricting scripts needs a fresh nonce per request, which forces every page to render dynamically and conflicts with Cache Components / partial prerendering. React escapes all output, which is the main XSS defence here.
+- **No HSTS header.** It only means something over HTTPS and belongs to the HTTPS proxy of a real deployment; on `http://localhost` browsers ignore it.
+
+The full Stage 9 route-by-route review is in [security-review.md](security-review.md).
