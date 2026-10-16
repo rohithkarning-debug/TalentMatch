@@ -58,15 +58,18 @@ export default function CandidateDashboard() {
 
   async function saveProfile(e) {
     e.preventDefault(); setBusy(true); setError(""); setNotice("");
-    const payload = {
-      fullName: profile.fullName.trim(), phone: profile.phone.trim() || null,
-      location: profile.location.trim() || null, headline: profile.headline.trim() || null,
-      yearsExperience: Number(profile.yearsExperience || 0), highestEducation: profile.highestEducation.trim() || null,
-    };
-    const result = await request("/api/candidate/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-    setBusy(false);
-    if (!result.ok) { setError(result.body?.error?.message || "Profile could not be saved."); return; }
-    setProfile(result.body.profile); setNotice("Profile saved successfully.");
+    // Optional columns come back from the API as null, so trim a "" fallback instead.
+    const text = (value) => (value ?? "").trim();
+    try {
+      const payload = {
+        fullName: text(profile.fullName), phone: text(profile.phone) || null,
+        location: text(profile.location) || null, headline: text(profile.headline) || null,
+        yearsExperience: Number(profile.yearsExperience || 0), highestEducation: text(profile.highestEducation) || null,
+      };
+      const result = await request("/api/candidate/profile", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      if (!result.ok) { setError(result.body?.error?.message || "Profile could not be saved."); return; }
+      setProfile(result.body.profile); setNotice("Profile saved successfully.");
+    } finally { setBusy(false); }
   }
 
   async function addSkill(e) {
@@ -89,12 +92,22 @@ export default function CandidateDashboard() {
 
   async function uploadResume(e) {
     e.preventDefault(); if (!selectedFile) return;
+    // React clears e.currentTarget once the handler yields, so keep the form now.
+    const formElement = e.currentTarget;
     setBusy(true); setError(""); setNotice("");
     const form = new FormData(); form.append("file", selectedFile);
     const result = await request("/api/candidate/resumes", { method: "POST", body: form });
     setBusy(false);
     if (!result.ok) { setError(result.body?.error?.message || "Resume upload failed."); return; }
-    setSelectedFile(null); e.currentTarget.reset(); setNotice("Resume uploaded successfully."); await refresh();
+    setSelectedFile(null); formElement.reset(); setNotice("Resume uploaded successfully."); await refresh();
+  }
+
+  async function makePrimary(id) {
+    setBusy(true); setError(""); setNotice("");
+    const result = await request(`/api/candidate/resumes/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isPrimary: true }) });
+    setBusy(false);
+    if (!result.ok) { setError(result.body?.error?.message || "Primary resume could not be changed."); return; }
+    setNotice("Primary resume updated."); await refresh();
   }
 
   async function deleteResume(id) {
@@ -110,7 +123,7 @@ export default function CandidateDashboard() {
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><Link href="/" className="text-sm text-zinc-500 hover:underline">← TalentMatch home</Link><h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Candidate dashboard</h1><p className="mt-2 text-zinc-600 dark:text-zinc-400">Manage your profile, skills, and resumes.</p></div>
-        <button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh data</button>
+        <div className="flex gap-2"><Link href="/candidate/jobs" className={secondaryClass}>Browse open jobs →</Link><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh data</button></div>
       </header>
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{error}</div>}
       {notice && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{notice}</div>}
@@ -143,7 +156,7 @@ export default function CandidateDashboard() {
             <label className="block flex-1 text-sm font-medium text-zinc-800 dark:text-zinc-200">Choose resume<input className={`${inputClass} file:mr-3 file:rounded-md file:border-0 file:bg-zinc-200 file:px-3 file:py-1.5 dark:file:bg-zinc-700`} type="file" accept=".pdf,.txt,application/pdf,text/plain" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} required /></label>
             <button className={buttonClass} disabled={busy || !selectedFile}>Upload resume</button>
           </form>
-          <div className="mt-5 space-y-2">{resumes.length === 0 ? <p className="text-sm text-zinc-500">No resumes uploaded yet.</p> : resumes.map((r) => <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><div className="min-w-0"><p className="break-all font-medium text-zinc-900 dark:text-zinc-50">{r.fileName} {r.isPrimary && <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Primary</span>}</p><p className="text-sm text-zinc-600 dark:text-zinc-400">{r.mimeType} · {r.fileSizeBytes ? `${(r.fileSizeBytes / 1024).toFixed(1)} KB` : "seeded text-only resume"} · {new Date(r.uploadedAt).toLocaleDateString()}</p></div><button className={secondaryClass} disabled={busy} onClick={() => deleteResume(r.id)}>Delete</button></div>)}</div>
+          <div className="mt-5 space-y-2">{resumes.length === 0 ? <p className="text-sm text-zinc-500">No resumes uploaded yet.</p> : resumes.map((r) => <div key={r.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-800"><div className="min-w-0"><p className="break-all font-medium text-zinc-900 dark:text-zinc-50">{r.fileName} {r.isPrimary && <span className="ml-1 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Primary</span>}</p><p className="text-sm text-zinc-600 dark:text-zinc-400">{r.mimeType} · {r.fileSizeBytes ? `${(r.fileSizeBytes / 1024).toFixed(1)} KB` : "seeded text-only resume"} · {new Date(r.uploadedAt).toLocaleDateString()}</p></div><div className="flex gap-2">{!r.isPrimary && <button className={secondaryClass} disabled={busy} onClick={() => makePrimary(r.id)}>Set as primary</button>}<button className={secondaryClass} disabled={busy} onClick={() => deleteResume(r.id)}>Delete</button></div></div>)}</div>
         </Section>
       </>}
       <p className="pb-4 text-xs text-zinc-500">Resume files are private and are not served from a public URL.</p>

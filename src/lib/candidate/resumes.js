@@ -17,7 +17,8 @@ export async function extractResumeText(buffer, mimeType) {
     text = new TextDecoder("utf-8", { fatal: true }).decode(buffer);
   } else {
     const task = getDocument({ data: new Uint8Array(buffer), useSystemFonts: true });
-    const pdf = await task.promise;
+    let pdf;
+    try { pdf = await task.promise; } catch (err) { throw describePdfError(err); }
     try {
       const pages = [];
       for (let n = 1; n <= pdf.numPages; n++) {
@@ -27,11 +28,36 @@ export async function extractResumeText(buffer, mimeType) {
         page.cleanup();
       }
       text = pages.join("\n");
-    } finally { await pdf.destroy(); }
+    } finally { await task.destroy(); } // pdfjs 6: the loading task owns the document and worker
   }
   text = text.replace(/\u0000/g, "").trim();
-  if (text.length < 50) throw Object.assign(new Error("Resume must contain at least 50 characters of extractable text"), { status: 400, code: "INSUFFICIENT_TEXT" });
+  if (text.length < 50) {
+    const hint = mimeType === "application/pdf" ? " Scanned (image-only) PDFs have no selectable text; export the resume as a text-based PDF instead." : "";
+    throw Object.assign(new Error(`Resume must contain at least 50 characters of extractable text.${hint}`), { status: 400, code: "INSUFFICIENT_TEXT" });
+  }
   return text;
+}
+
+// Call inside a transaction before changing which resume is primary.
+// Locking the candidate's own row (not the resumes rows) also works when the
+// candidate has no resumes yet, so two uploads in parallel cannot both decide
+// "there is no primary, make mine primary". The second waits for the first.
+// NO KEY UPDATE is the weakest lock that blocks another resume transaction;
+// unlike FOR UPDATE it does not block FK checks (e.g. a new application).
+export async function lockCandidateResumes(client, candidateId) {
+  await client.query("SELECT user_id FROM candidates WHERE user_id = $1 FOR NO KEY UPDATE", [candidateId]);
+}
+
+// Problems with the uploaded file become a 400 the candidate can act on.
+// Anything else (e.g. the parser failing to load) is left as a server error.
+function describePdfError(err) {
+  if (err?.name === "PasswordException") {
+    return Object.assign(new Error("This PDF is password-protected. Upload a version without a password."), { status: 400, code: "PDF_ENCRYPTED" });
+  }
+  if (err?.name === "InvalidPDFException" || err?.name === "FormatError") {
+    return Object.assign(new Error("This PDF is damaged or not a valid PDF file."), { status: 400, code: "INVALID_PDF" });
+  }
+  return err;
 }
 
 export async function persistResume(buffer, fileName) {
