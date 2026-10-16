@@ -465,8 +465,12 @@ describe("rejecting an offered application withdraws its pending offer (trg_appl
       await client.query("SELECT update_application_status($1, 'rejected', $2, 'rolled back on purpose')", [c.applicationId, meeraId]);
       const inside = await client.query("SELECT status FROM offers WHERE offer_id = $1", [c.offerId]);
       assert.equal(inside.rows[0].status, "withdrawn");
+    } finally {
+      // Always roll back, also when an assertion above fails: a pooled client
+      // returned mid-transaction would swallow the after() cleanup.
       await client.query("ROLLBACK");
-    } finally { client.release(); }
+      client.release();
+    }
     assert.equal((await snapshot(c.applicationId)).status, "offered");
     assert.equal(await offerStatus(c.offerId), "pending");
 
