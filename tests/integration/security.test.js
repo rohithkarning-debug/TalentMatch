@@ -33,3 +33,30 @@ describe("security headers (next.config.mjs)", () => {
     });
   }
 });
+
+describe("CSRF: assertSameOrigin on state-changing routes", () => {
+  const login = (headers) => fetch(`${server.baseUrl}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify({ email: "admin@talentmatch.example", password: "TalentMatch@2026" }),
+  });
+
+  it("Sec-Fetch-Site cross-site / same-site is refused even without an Origin header (403, no cookie)", async () => {
+    for (const site of ["cross-site", "same-site"]) {
+      const res = await login({ "Sec-Fetch-Site": site });
+      assert.equal(res.status, 403, site);
+      assert.equal((await res.json()).error.code, "CROSS_ORIGIN");
+      assert.deepEqual(res.headers.getSetCookie(), []);
+    }
+  });
+
+  it("a foreign Origin is refused (403); same-origin and non-browser requests pass", async () => {
+    const foreign = await login({ Origin: "https://evil.example", "Sec-Fetch-Site": "cross-site" });
+    assert.equal(foreign.status, 403);
+    const host = new URL(server.baseUrl).host;
+    const same = await login({ Origin: `http://${host}`, "Sec-Fetch-Site": "same-origin" });
+    assert.equal(same.status, 200, await same.text());
+    const noHeaders = await login({});
+    assert.equal(noHeaders.status, 200);
+  });
+});
