@@ -4,9 +4,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, dangerClass, EMPLOYMENT_LABELS, errorLines, formatDateTime, formatSalary,
-  formatScore, inputClass, pageClass, request, secondaryClass, StatusBadge, StatusTimeline,
+  Alert, buttonClass, cardClass, dangerClass, EMPLOYMENT_LABELS, errorLines, formatDate, formatDateTime, formatMoney,
+  formatSalary, formatScore, inputClass, pageClass, request, secondaryClass, StatusBadge, StatusTimeline,
 } from "@/components/ui";
+import { MakeOfferForm, ScheduleInterviewForm } from "@/components/recruiter/PipelineForms";
 
 const APPLICATION_STATUSES = ["applied", "shortlisted", "interviewed", "offered", "rejected"];
 
@@ -27,6 +28,35 @@ function ScoreBar({ score }) {
   return <div className="w-28">
     <p className="font-mono text-sm text-zinc-900 dark:text-zinc-50">{formatScore(score)}</p>
     <div className="mt-1 h-1.5 rounded bg-zinc-200 dark:bg-zinc-800"><div className="h-1.5 rounded bg-zinc-800 dark:bg-zinc-200" style={{ width: `${pct}%` }} /></div>
+  </div>;
+}
+
+// Interviews and offer of one applicant, with the next possible action.
+// The buttons only appear when the action makes sense, but the database
+// still decides (e.g. an offer on a non-interviewed application fails).
+function PipelinePanel({ app, onChanged }) {
+  const [form, setForm] = useState(null); // "interview" | "offer" | null
+  const canSchedule = ["shortlisted", "interviewed"].includes(app.status);
+  const canOffer = app.status === "interviewed" && !app.offer;
+  const done = () => { setForm(null); onChanged(); };
+
+  return <div className="mt-3 space-y-2">
+    {(app.interviews.length > 0 || app.offer) && <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-600 dark:text-zinc-400">
+      {app.interviews.map((i) => <span key={i.id} className="rounded-lg border border-zinc-200 px-2 py-1 dark:border-zinc-800">
+        Round {i.roundNo} · {formatDateTime(i.scheduledAt)} · {i.mode} · <StatusBadge status={i.status} />{i.rating ? ` · ${i.rating}/5` : ""}
+      </span>)}
+      {app.offer && <span className="rounded-lg border border-emerald-200 px-2 py-1 dark:border-emerald-900">
+        Offer {formatMoney(app.offer.salaryOffered, app.offer.currency)} · joins {formatDate(app.offer.joiningDate)} · <StatusBadge status={app.offer.status} />
+      </span>}
+      <Link href="/recruiter/interviews" className="underline">manage interviews</Link>
+      {app.offer && <Link href="/recruiter/offers" className="underline">manage offers</Link>}
+    </div>}
+    {!form && (canSchedule || canOffer) && <div className="flex gap-2">
+      {canSchedule && <button type="button" className={secondaryClass} onClick={() => setForm("interview")}>Schedule interview</button>}
+      {canOffer && <button type="button" className={secondaryClass} onClick={() => setForm("offer")}>Make offer</button>}
+    </div>}
+    {form === "interview" && <ScheduleInterviewForm applicationId={app.id} isFirst={app.status !== "interviewed"} onDone={done} onCancel={() => setForm(null)} />}
+    {form === "offer" && <MakeOfferForm applicationId={app.id} onDone={done} onCancel={() => setForm(null)} />}
   </div>;
 }
 
@@ -71,6 +101,7 @@ function ApplicantRow({ app, rank, onChanged }) {
       <button type="button" className={secondaryClass} onClick={() => setOpen((v) => !v)}>{open ? "Hide" : "Show"} history ({app.history.length})</button>
     </form>
     {error && <div className="mt-3"><Alert lines={error} /></div>}
+    <PipelinePanel app={app} onChanged={onChanged} />
     {open && <div className="mt-4">
       {app.coverLetter && <p className="mb-3 rounded-lg bg-zinc-50 p-3 text-sm italic text-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">“{app.coverLetter}”</p>}
       <StatusTimeline history={app.history} />
@@ -91,6 +122,7 @@ function ApplicantsTab({ jobId }) {
     <p className="text-sm text-zinc-600 dark:text-zinc-400">
       Ranked by match score = 1 − (resume ⟷ job cosine distance), computed in PostgreSQL when the candidate applied, using the resume they chose.
       Allowed moves: applied → shortlisted → interviewed → offered, or any active stage → rejected. The database rejects anything else.
+      “Interviewed” and “offered” are reached by scheduling an interview and making an offer.
     </p>
     <Alert lines={error} />
     {apps === null ? !error && <p className="text-sm text-zinc-500">Loading applicants…</p>

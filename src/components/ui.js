@@ -1,5 +1,10 @@
+"use client";
+
 // Small shared UI helpers for the recruiter and application pages
 // (plain Tailwind class strings, a fetch wrapper, and a few formatters).
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export const inputClass = "mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
 export const buttonClass = "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
@@ -57,10 +62,38 @@ export const STATUS_STYLES = {
   draft: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
   open: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
   closed: "bg-zinc-300 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-100",
+  // interviews
+  scheduled: "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
+  completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+  cancelled: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
+  no_show: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
+  // offers
+  pending: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-200",
+  accepted: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200",
+  declined: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-200",
+  withdrawn: "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300",
 };
 
 export function StatusBadge({ status }) {
-  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[status] || ""}`}>{status}</span>;
+  return <span className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${STATUS_STYLES[status] || ""}`}>{status.replace("_", " ")}</span>;
+}
+
+export const formatMoney = (amount, currency = "INR") =>
+  `${currency === "INR" ? "₹" : `${currency} `}${Number(amount).toLocaleString("en-IN")}`;
+
+// "2026-11-16" -> "16 Nov 2026" without time-zone shifts (a DATE has no time).
+export const formatDate = (isoDate) => new Date(`${isoDate.slice(0, 10)}T00:00:00Z`)
+  .toLocaleDateString("en-IN", { timeZone: "UTC", dateStyle: "medium" });
+
+// Notifications link with the unread count, for page headers.
+export function NotificationsLink() {
+  const [count, setCount] = useState(null);
+  useEffect(() => {
+    request("/api/notifications?unreadOnly=true&limit=1").then((r) => { if (r.ok) setCount(r.body.unreadCount); });
+  }, []);
+  return <Link href="/notifications" className={secondaryClass}>
+    Notifications{count ? <span className="ml-1.5 rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-semibold text-white">{count}</span> : null}
+  </Link>;
 }
 
 // Similarity is a cosine in [-1, 1]; null means "not computed yet".
