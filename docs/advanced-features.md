@@ -3,11 +3,11 @@
 Migrations: `010_updated_at_triggers.sql`, `011_application_triggers.sql`, `012_functions.sql`, `013_views.sql`.
 Tests: `db/tests/stage2_advanced_tests.sql` · Queries: `db/queries/important_queries.sql` · Transaction demo: `db/demos/transaction_demo.sql`.
 
-All outputs below are real, captured on 2026-10-09 from PostgreSQL 17.11 running on a freshly reset, migrated and seeded database.
+All outputs below are real. They were re-captured on 16 Oct 2026 from PostgreSQL 17.11 on a database rebuilt from scratch with the final migrations 001–024 and the final seed. The seed's dates are relative to the day it runs, so dates (not counts) shift if you reseed on another day.
 
 | Requirement concept (PDF §7) | Where |
 |---|---|
-| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9); Stage 9: `trg_applications_withdraw_offer` (020), the completion rule in `trg_interviews_guard` (021) and `trg_applications_accepted_offer_guard` (022; §14). 18 in total |
+| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9); Stage 9: `trg_applications_withdraw_offer` (020), the completion rule in `trg_interviews_guard` (021) `trg_applications_accepted_offer_guard` (022; §14); Stage 10: `trg_offers_interview_guard` (023; §14). 19 in total |
 | Stored procedures / functions | `generate_hiring_pipeline_report`, `update_application_status`, `is_valid_status_transition` (+ trigger functions); Stage 5: `rank_candidates_for_job`; Stage 6: `compute_match_score` (016) |
 | Views | `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary` |
 | Transactions | Stage 7 **make offer**, accept/decline, withdraw, **schedule interview** (§10, §11; Q27, Q28), Stage 6 **apply to job** (`src/lib/applications.js`, §7), job create/edit/delete, resume upload, `update_application_status` (atomic), seed and migrations, `transaction_demo.sql` |
@@ -96,7 +96,7 @@ UPDATE applications SET status = 'shortlisted' WHERE application_id = 6;
 
 `update_application_status()` does this automatically. For a new application, `changed_by` defaults to the candidate and the note to "Application submitted".
 
-**Historical import mode.** The seed loads applications that are already `offered`, `interviewed` and so on, together with their real, dated history rows. If the trigger also logged those inserts, every seeded application would get a duplicate, wrongly-dated history row. The seed therefore runs `SET LOCAL talentmatch.import_mode = 'on'`, which makes only the history trigger and the initial-status guard skip. The counter and the transition guard still run. The application code never sets this switch. A fresh `reset → migrate → seed` gives exactly 31 history rows and 0 inconsistencies (see §6).
+**Historical import mode.** The seed loads applications that are already `offered`, `interviewed` and so on, together with their real, dated history rows. If the trigger also logged those inserts, every seeded application would get a duplicate, wrongly-dated history row. The seed therefore runs `SET LOCAL talentmatch.import_mode = 'on'`, which makes only the history trigger and the initial-status guard skip. The counter and the transition guard still run. The application code never sets this switch. A fresh `reset → migrate → seed` gives exactly 40 history rows and 0 inconsistencies (see §6).
 
 ---
 
@@ -123,18 +123,18 @@ Actual output of `generate_hiring_pipeline_report()`:
 ```
        company_name       |              job_title               |   st   | tot | ap | sl | iv | of | rj | sl_pct | of_pct | d_sl | iv_done | acc
 --------------------------+--------------------------------------+--------+-----+----+----+----+----+----+--------+--------+------+---------+-----
- Kestrel Software Labs    | Frontend Developer (React / Next.js) | open   |   3 |  1 |  1 |  1 |  0 |  0 |   66.7 |    0.0 |  6.7 |       1 |   0
- Kestrel Software Labs    | Backend Engineer (Node.js)           | open   |   2 |  1 |  0 |  0 |  0 |  1 |    0.0 |    0.0 |      |       0 |   0
  Kestrel Software Labs    | Full Stack Developer                 | draft  |   0 |  0 |  0 |  0 |  0 |  0 |        |        |      |       0 |   0
- Nimbus Analytics Pvt Ltd | Machine Learning Engineer            | open   |   4 |  0 |  1 |  1 |  1 |  1 |   75.0 |   25.0 |  6.7 |       3 |   0
- Nimbus Analytics Pvt Ltd | Data Analyst                         | open   |   3 |  2 |  1 |  0 |  0 |  0 |   33.3 |    0.0 |  9.8 |       0 |   0
+ Kestrel Software Labs    | Backend Engineer (Node.js)           | open   |   3 |  1 |  0 |  0 |  0 |  2 |   33.3 |   33.3 |  5.6 |       1 |   0
+ Kestrel Software Labs    | Frontend Developer (React / Next.js) | open   |   3 |  1 |  1 |  1 |  0 |  0 |   66.7 |    0.0 |  6.7 |       1 |   0
  Nimbus Analytics Pvt Ltd | NLP Research Intern                  | open   |   1 |  1 |  0 |  0 |  0 |  0 |    0.0 |    0.0 |      |       0 |   0
- Orbitline Cloud Systems  | Site Reliability Engineer            | closed |   1 |  0 |  0 |  0 |  0 |  1 |    0.0 |    0.0 |      |       0 |   0
+ Nimbus Analytics Pvt Ltd | Data Analyst                         | open   |   3 |  2 |  1 |  0 |  0 |  0 |   33.3 |    0.0 |  9.8 |       0 |   0
+ Nimbus Analytics Pvt Ltd | Machine Learning Engineer            | open   |   4 |  0 |  1 |  1 |  1 |  1 |   75.0 |   25.0 |  6.7 |       3 |   0
+ Orbitline Cloud Systems  | Site Reliability Engineer            | closed |   2 |  0 |  0 |  0 |  1 |  1 |   50.0 |   50.0 |  5.0 |       1 |   1
  Orbitline Cloud Systems  | DevOps Engineer                      | open   |   2 |  1 |  0 |  1 |  0 |  0 |   50.0 |    0.0 |  5.9 |       1 |   0
 ```
 (`sl_pct` counts applications that *ever* reached shortlisted. For example, ML Engineer is 3 of 4: Aditi, Rohan and Divya. Aman was rejected straight from `applied`.)
 
-Filtered to September 2026: Frontend 2, Backend 2, Data Analyst 2, NLP Intern 1.
+Filtered to September 2026 (`'2026-09-01'` to `'2026-09-30'`): Frontend 3, Backend 3, Data Analyst 3, Machine Learning Engineer 2, NLP Intern 1, DevOps 1.
 
 ### 2.2 `update_application_status(p_application_id BIGINT, p_new_status VARCHAR, p_changed_by BIGINT, p_note TEXT = NULL) RETURNS applications`
 
@@ -155,9 +155,9 @@ The whole function is **atomic**. In test T9f, an invalid transition left the st
 
 Actual output (inside a rolled-back transaction):
 ```
-SELECT application_id, status, updated_at FROM update_application_status(12, 'shortlisted', <Kavya>, 'Strong design-system portfolio');
+SELECT application_id, status, updated_at FROM update_application_status(13, 'shortlisted', <Kavya>, 'Strong design-system portfolio');
  application_id |   status    |          updated_at
-             12 | shortlisted | 2026-10-09 15:12:25.377958+00
+             13 | shortlisted | 2026-10-16 16:24:37.314739+00
 
  old_status | new_status  |   changed_by   |              note
             | applied     | Vikram Chauhan | Application submitted
@@ -184,23 +184,23 @@ A **view** is a saved SELECT. The app queries it like a table, and PostgreSQL ru
 Recruiter, company, counts per stage, `active_in_pipeline`, average match score, last application time, and upcoming interviews (correlated subquery).
 ```
  recruiter_name |       company_name       |              job_title               | job_status | tot | applied | shortlisted | interviewed | offered | rejected | active | upcoming
- Kavya Menon    | Kestrel Software Labs    | Backend Engineer (Node.js)           | open       |   2 |       1 |           0 |           0 |       0 |        1 |      1 |        0
+ Kavya Menon    | Kestrel Software Labs    | Backend Engineer (Node.js)           | open       |   3 |       1 |           0 |           0 |       0 |        2 |      1 |        0
  Kavya Menon    | Kestrel Software Labs    | Frontend Developer (React / Next.js) | open       |   3 |       1 |           1 |           1 |       0 |        0 |      3 |        1
  Kavya Menon    | Kestrel Software Labs    | Full Stack Developer                 | draft      |   0 |       0 |           0 |           0 |       0 |        0 |      0 |        0
  Arjun Rao      | Nimbus Analytics Pvt Ltd | Data Analyst                         | open       |   3 |       2 |           1 |           0 |       0 |        0 |      3 |        0
  Meera Iyer     | Nimbus Analytics Pvt Ltd | Machine Learning Engineer            | open       |   4 |       0 |           1 |           1 |       1 |        1 |      2 |        1
  Meera Iyer     | Nimbus Analytics Pvt Ltd | NLP Research Intern                  | open       |   1 |       1 |           0 |           0 |       0 |        0 |      1 |        0
  Rahul Kamath   | Orbitline Cloud Systems  | DevOps Engineer                      | open       |   2 |       1 |           0 |           1 |       0 |        0 |      2 |        0
- Rahul Kamath   | Orbitline Cloud Systems  | Site Reliability Engineer            | closed     |   1 |       0 |           0 |           0 |       0 |        1 |      0 |        0
+ Rahul Kamath   | Orbitline Cloud Systems  | Site Reliability Engineer            | closed     |   2 |       0 |           0 |           0 |       1 |        1 |      0 |        0
 ```
 
 ### 3.2 `candidate_application_view` — one row per application
 Job, company, salary, current status, the time of the last status change (LATERAL subquery), the next scheduled interview (LATERAL), and offer details (LEFT JOIN `offers`, at most one per application thanks to its UNIQUE constraint).
 ```
  candidate_name |         job_title         |       company_name       | application_status | status_changed_at |   next_interview_at    | offer_status | offer_salary
- Aditi Sharma   | Machine Learning Engineer | Nimbus Analytics Pvt Ltd | interviewed        | 2026-09-12        | 2026-10-14 05:30:00+00 |              |
- Rohan Verma    | Data Analyst              | Nimbus Analytics Pvt Ltd | applied            | 2026-09-06        |                        |              |
- Rohan Verma    | Machine Learning Engineer | Nimbus Analytics Pvt Ltd | offered            | 2026-10-01        |                        | pending      |   2600000.00
+ Aditi Sharma   | Machine Learning Engineer | Nimbus Analytics Pvt Ltd | interviewed        | 2026-09-20        | 2026-10-22 05:30:00+00 |              |
+ Rohan Verma    | Data Analyst              | Nimbus Analytics Pvt Ltd | applied            | 2026-09-14        |                        |              |
+ Rohan Verma    | Machine Learning Engineer | Nimbus Analytics Pvt Ltd | offered            | 2026-10-09        |                        | pending      |   2600000.00
 ```
 
 ### 3.3 `company_hiring_summary` — one row per company with hiring activity
@@ -210,34 +210,34 @@ Joins companies → jobs → applications → offers. Jobs repeat once per appli
 ```
  company_name             | total_jobs | open_jobs | total_applications | unique_candidates | avg_applications_per_job | currently_offered | rejected | rejection_rate_pct | offers_made | offers_accepted
  Nimbus Analytics Pvt Ltd |          3 |         3 |                  8 |                 6 |                     2.67 |                 1 |        1 |               12.5 |           1 |               0
- Kestrel Software Labs    |          3 |         2 |                  5 |                 5 |                     1.67 |                 0 |        1 |               20.0 |           0 |               0
- Orbitline Cloud Systems  |          2 |         1 |                  3 |                 2 |                     1.50 |                 0 |        1 |               33.3 |           0 |               0
+ Kestrel Software Labs    |          3 |         2 |                  6 |                 5 |                     2.00 |                 0 |        2 |               33.3 |           1 |               0
+ Orbitline Cloud Systems  |          2 |         1 |                  4 |                 2 |                     2.00 |                 1 |        1 |               25.0 |           1 |               1
 ```
-`avg_match_score` is NULL in every view until Stage 5 computes real similarities.
+`avg_match_score` (not shown above) is the average of the real cosine scores; it is NULL only for jobs whose applications are not scored yet.
 
 ---
 
 ## 4. Important queries
 
-`db/queries/important_queries.sql` contains 26 commented queries (Stage 7 added Q27–Q32 and Stage 8 added Q33–Q41; see §12). On 2026-10-16 the whole file ran with `ON_ERROR_STOP` (exit code 0, no errors).
+`db/queries/important_queries.sql` contains 41 commented queries: Q1–Q26 below, Q27–Q32 from Stage 7 (§10–11) and Q33–Q41 from Stage 8 (§12). In the final run (16 Oct 2026) the whole file ran with `ON_ERROR_STOP=1`: exit code 0, no errors. The row counts below are from that run.
 
 | # | Concept(s) | Purpose | Rows |
 |---|---|---|---|
 | Q1 | INNER + LEFT JOIN, ORDER BY | Open jobs, newest first | 6 |
 | Q2 | GROUP BY, COUNT, window `sum() OVER ()` | Applications per status with % | 5 |
-| Q3 | GROUP BY + **HAVING** | Jobs with ≥ 3 applicants | 3 |
+| Q3 | GROUP BY + **HAVING** | Jobs with ≥ 3 applicants | 4 |
 | Q4 | MIN / MAX / AVG / FILTER | Salary stats per company | 3 |
 | Q5 | **NOT EXISTS** | Candidates who never applied | 0 (correct: all seeded candidates applied) |
 | Q6 | **NOT EXISTS** | Open/draft jobs with no applicants | 1 (Full Stack Developer, draft) |
 | Q7 | **IN (subquery)**, nested subquery | Candidates with a required ML skill | 6 |
-| Q8 | **Correlated subqueries** | Required-skill coverage per applicant ("3/3") | 16 |
+| Q8 | **Correlated subqueries** | Required-skill coverage per applicant ("3/3") | 18 |
 | Q9 | Scalar subquery | Above-average experience (avg 3.08 yrs) | 4 |
 | Q10 | COUNT(DISTINCT) over two M:N tables + HAVING | Skill demand vs supply | 4 |
-| Q11 | Window `LAG()` on history | Average days per transition | 4 |
+| Q11 | Window `LAG()` on history | Average days per transition | 5 |
 | Q12 | Multi-JOIN, FILTER, ORDER BY | Recruiter workload | 4 |
 | Q13 | 4-table JOIN, date filter | Upcoming interviews | 2 |
 | Q14 | Correlated subquery with MAX | Each candidate's latest application | 12 |
-| Q15 | JOIN, AVG, HAVING | Interview rating vs outcome (offered 4.50, interviewed 4.00) | 2 |
+| Q15 | JOIN, AVG, HAVING | Interview rating vs outcome (offered 4.67, interviewed 4.00, rejected 4.00) | 3 |
 | Q16 | View + set-returning function | Company summary and Nimbus funnel | 3 + 3 |
 | Q17 | M:N JOIN, GROUP BY + HAVING, string_agg | Skill profile per candidate | 12 |
 | Q18 | Two derived-table aggregates + HAVING | Skill demand vs supply | 16 |
@@ -293,7 +293,7 @@ Other transactions in the project:
 - Registration (users + candidates) is an API transaction (Stage 3).
 - **Apply to job** is an explicit API transaction (Stage 6, see §7).
 - Job create / edit / delete lock and change `jobs` + `job_skills` in one transaction (Stage 6).
-- Making an offer is still to come.
+- Making an offer, scheduling an interview and answering or withdrawing an offer are API transactions too (Stage 7, §10–11); so is creating a recruiter account (Stage 8, §13).
 
 ---
 
@@ -302,41 +302,41 @@ Other transactions in the project:
 Everything runs in transactions that are rolled back. 27 PASS lines, 0 failures. (Stage 9: T13 now runs in its own transaction. Since migration 018, the earlier tests queue events for the deferred `trg_applications_stage_records`, and PostgreSQL refuses `TRUNCATE` while trigger events are pending. Re-run on 2026-10-16: 27 PASS, see [test-cases.md](test-cases.md).) A fingerprint of the applications and jobs tables plus the history and notification counts was identical before and after the run.
 
 ```
-PASS T1: applicant_count 2 -> 3, history (NULL -> applied) by candidate 9
-PASS T2: applicant_count 3 -> 2
-PASS T3: old job 2 -> 1 -> 2, new job 2 -> 3 -> 2
-PASS T4: history row 43 : applied -> shortlisted by user 3, note "Good SQL test score"
-  rejected as expected: Invalid application status transition: applied -> offered (application 12)
-  rejected as expected: Invalid application status transition: applied -> interviewed (application 12)
+PASS T1: applicant_count 3 -> 4, history (NULL -> applied) by candidate 9
+PASS T2: applicant_count 4 -> 3
+PASS T3: old job 2 -> 1 -> 2, new job 3 -> 4 -> 3
+PASS T4: history row 58 : applied -> shortlisted by user 3, note "Good SQL test score"
+  rejected as expected: Invalid application status transition: applied -> offered (application 13)
+  rejected as expected: Invalid application status transition: applied -> interviewed (application 13)
   rejected as expected: Invalid application status transition: rejected -> shortlisted (application 5)
   rejected as expected: Invalid application status transition: offered -> interviewed (application 7)
-  rejected as expected: Invalid application status transition: interviewed -> applied (application 13)
+  rejected as expected: Invalid application status transition: interviewed -> applied (application 14)
 PASS T5: 5/5 invalid transitions rejected, no history rows written
 PASS T6: 5 history rows for the full path; same-status update ignored
 PASS T7: A new application must start with status 'applied' (got offered)
-PASS T8a: jobs.updated_at 2026-01-01 -> 2026-10-09 15:13:54.411696+00 after editing openings
+PASS T8a: jobs.updated_at 2026-01-01 -> 2026-10-16 16:24:30.682998+00 after editing openings
 PASS T8b: no-op UPDATE left jobs.updated_at at 2026-01-01
 PASS T8c: new application changed applicant_count but not jobs.updated_at
-PASS T8d: applications.updated_at 2026-09-05 14:20:00+00 -> 2026-10-09 15:13:54.411696+00
+PASS T8d: applications.updated_at 2026-09-13 14:20:00+00 -> 2026-10-16 16:24:30.682998+00
 PASS T8e: candidates.updated_at refreshed on profile edit
 PASS T9a: status=interviewed history=(shortlisted -> interviewed by 4, "Technical round cleared") + 1 notification
-PASS T9b: User 2 is not allowed to update application 11
-PASS T9c: User 17 is not allowed to update application 11
+PASS T9b: User 2 is not allowed to update application 12
+PASS T9c: User 17 is not allowed to update application 12
 PASS T9d: Unknown application status: hired
 PASS T9e: Application 999999 does not exist
-PASS T9f: Invalid application status transition: interviewed -> applied (application 11)
+PASS T9f: Invalid application status transition: interviewed -> applied (application 12)
 PASS T9g: failed call left status, history and notifications untouched
 PASS T9h: admin moved application to offered
-PASS T10a: 8 job rows, 17 applications total; Nimbus filter -> 3 rows
+PASS T10a: 8 job rows, 19 applications total; Nimbus filter -> 3 rows
 PASS T10b: Invalid date range: from (2026-10-01) is after to (2026-09-01)
 PASS T10c: Company 424242 does not exist
 PASS T11: all three views consistent with base tables
 PASS T11b: company with 0 applications hidden by HAVING (still visible per job in recruiter_pipeline_view)
 PASS T12: ML Engineer 4 -> 3, Frontend 3 -> 2
 PASS T13: all applicant_count values are 0 after TRUNCATE
-=== All Stage 2 tests passed; transaction rolled back (seed data unchanged) ===
+=== All Stage 2 tests passed; transactions rolled back (seed data unchanged) ===
 ```
-(T10a reports 17 applications because T8c inserted one inside the same test transaction.)
+(T10a reports 19 applications because T8c inserted one inside the same test transaction; the seed has 18.)
 
 **Consistency checks** after a fresh `db:reset → db:migrate → db:seed` (each expected to return 0 rows, and each did):
 - jobs whose `applicant_count` differs from the real count
@@ -516,7 +516,7 @@ The role is a constant in the SQL; the strict zod schema rejects a `role` field 
 
 **Moving a recruiter to another company** is blocked by the database while they own jobs. `jobs (recruiter_id, company_id)` is a composite FK to `recruiters (user_id, company_id)` with no ON UPDATE action, so changing `recruiters.company_id` would leave the jobs pointing at a (recruiter, company) pair that no longer exists. PostgreSQL refuses (`jobs_recruiter_fkey`), and the API returns 409 `RECRUITER_OWNS_JOBS`. A recruiter with no jobs can be moved.
 
-## 14. Stage 9: consistency fixes (migrations 020–022)
+## 14. Stages 9–10: consistency fixes (migrations 020–024)
 
 Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for the API, `update_application_status()` from psql, and plain SQL alike.
 
@@ -524,7 +524,9 @@ Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for
 |---|---|---|
 | `trg_applications_withdraw_offer` → `withdraw_pending_offer_on_reject()` | AFTER UPDATE OF status ON applications, `WHEN (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected')` | The application's **pending** offer becomes `withdrawn` and the candidate gets one `offer_withdrawn` notification, in the same transaction as the reject. Accepted / declined offers are left alone (they record the candidate's decision) |
 | `trg_interviews_guard` (function replaced in 021) | BEFORE UPDATE (new rule) | `completed` or `no_show` only when `scheduled_at <= now()`; the time cannot be changed in the same UPDATE that records the outcome |
-| `trg_applications_accepted_offer_guard` → `guard_reject_after_accepted_offer()` (022) | BEFORE UPDATE OF status ON applications, `WHEN (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected')` | An application whose offer was **accepted** cannot be rejected. The API answers 409 `RULE_VIOLATION` "Application N cannot be rejected: the candidate accepted its offer on YYYY-MM-DD" |
+| `trg_applications_accepted_offer_guard` → `guard_reject_after_accepted_offer()` (022) | BEFORE UPDATE OF status ON applications, `WHEN (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected')` | An application whose offer was **accepted** cannot be rejected. The API answers 409 `RULE_VIOLATION` "Application N cannot be rejected: the candidate accepted its offer on 16 Oct 2026" (date format since 024) |
+| `trg_offers_interview_guard` → `guard_offer_while_interview_scheduled()` (023, Stage 10) | BEFORE INSERT ON offers | No new offer while any interview of the application is still `scheduled`. The API answers 409 `RULE_VIOLATION` "Complete or cancel the scheduled interview before making an offer." with the round and its time as the hint. Found in the Stage 10 walkthrough: an offer could be made and accepted while round 2 was still pending. Unlike `trg_offers_guard`, the seed import is not exempt |
+| 024 (Stage 10) | `CREATE OR REPLACE FUNCTION` for `guard_reject_after_accepted_offer()` and `guard_offer_change()` | Same rules as 019 and 022; only the dates in their messages now use the app's display format (`16 Oct 2026`) |
 
 **Why a trigger and not code in the API route?** Rejecting can happen through the status dropdown (PATCH route), `update_application_status()` called from psql, or a direct `UPDATE`. A rule in one route would miss the other two. The trigger runs inside the transaction of whatever changed the status: if the reject rolls back, the withdrawal rolls back too (integration test "update_application_status() from SQL does the same; a ROLLBACK undoes both").
 
@@ -538,6 +540,6 @@ Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for
 
 **Why not a CHECK constraint?** Same reason as 018: `scheduled_at <= now()` changes its answer over time, so it can only be checked at the moment of the change.
 
-**Evidence.** Negative controls on 2026-10-16: with `trg_applications_withdraw_offer` dropped, the two reject tests failed (29 pass / 2 fail). With the 019 version of `guard_interview_change()` restored, the two completion tests failed (30 pass / 2 fail). With the migrations in place, all 32 pipeline tests pass. After a fresh reset and seed, these SQL checks all return 0: pending offers on rejected applications, completed / no_show interviews in the future, offered applications without an offer.
+**Evidence.** Negative controls on 2026-10-16: with `trg_applications_withdraw_offer` dropped, the two reject tests failed (29 pass / 2 fail). With the 019 version of `guard_interview_change()` restored, the two completion tests failed (30 pass / 2 fail). With the migrations in place, all 32 pipeline tests passed then; with the two migration 023 tests added in Stage 10, `pipeline.test.js` has 36 tests and all pass in the final run (147 integration tests in total). After a fresh reset and seed, these SQL checks all return 0: pending offers on rejected applications, completed / no_show interviews in the future, offered applications without an offer.
 
 **Demo data.** The seed now has one **accepted** offer (Neha Bhatt, Site Reliability Engineer, Orbitline) and one **declined** offer (Aman Malhotra, Backend Engineer, Kestrel; the recruiter then rejected the application, which leaves the declined offer unchanged). There is no `hired` status, so an accepted offer leaves the application at `offered`, exactly as the accept transaction does in the app.

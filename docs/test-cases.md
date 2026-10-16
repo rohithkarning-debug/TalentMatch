@@ -1,6 +1,6 @@
-# TalentMatch — Test Cases and Results (final, Stage 9)
+# TalentMatch — Test Cases and Results (final)
 
-Every row marked **Pass** below was run on **2026-10-16** during Stage 9. The suites in the summary (build, unit, integration, SQL scripts) and the clean-clone check were run on the final commit, on a database rebuilt from scratch (`db:reset → db:migrate → db:seed → db:embed`). The negative controls (9-18, 9-19, 9-28, 9-41) temporarily break one fix on purpose, so each was run while that fix was being added and then the fix was restored. Nothing is marked Pass from an earlier stage. Checks from earlier stages that were *not* repeated are listed separately in [§ Not re-run in Stage 9](#not-re-run-in-stage-9) and are not counted.
+Every row marked **Pass** below was run on **2026-10-16**, during Stage 9 or Stage 10 (final documentation). The suites in the summary (build, unit, integration, SQL scripts) were re-run on the final commit with migrations **001–024**, on a database rebuilt from scratch (`db:reset → db:migrate → db:seed → db:embed`). The negative controls (9-18, 9-19, 9-28, 9-41) temporarily break one fix on purpose, so each was run while that fix was being added and then the fix was restored. Nothing is marked Pass from an earlier stage. Checks from earlier stages that were *not* repeated are listed separately in [§ Not re-run in Stage 9](#not-re-run-in-stage-9) and are not counted.
 
 **Environment:** Windows 11, Node.js 22.19.0, Next.js 16.4.0 production build (`next start`), PostgreSQL 17.11 + pgvector 0.8.7 in Docker (port 5433), model `sentence-transformers/all-MiniLM-L6-v2`.
 
@@ -11,13 +11,14 @@ Every row marked **Pass** below was run on **2026-10-16** during Stage 9. The su
 | Suite | Command | Real output | Result |
 |---|---|---|---|
 | Build | `npm run build` | exit 0, "Compiled successfully"; 1 Turbopack warning ("Dynamic filesystem access…", `src/app/api/candidate/resumes/[resumeId]/route.js`), present since Stage 4 | Pass |
-| Unit tests | `npm run test:unit` | `# tests 74  # suites 22  # pass 74  # fail 0` | Pass |
-| Integration tests | `npm run test:integration` | `# tests 145  # suites 35  # pass 145  # fail 0` (67.1 s) | Pass |
+| Unit tests | `npm run test:unit` | `# tests 85  # suites 25  # pass 85  # fail 0` | Pass |
+| Integration tests | `npm run test:integration` | `# tests 147  # suites 35  # pass 147  # fail 0` (97.5 s) | Pass |
 | Stage 1 SQL | `db/tests/stage1_constraint_tests.sql` | 8 of 8 invalid writes rejected, each rolled back | Pass |
 | Stage 2 SQL | `db/tests/stage2_advanced_tests.sql` | 27 PASS lines (T1–T13), `=== All Stage 2 tests passed …` | Pass |
-| Important queries | `psql -v ON_ERROR_STOP=1 < db/queries/important_queries.sql` | Q1–Q41 ran, exit code 0 | Pass |
+| Important queries | `psql -v ON_ERROR_STOP=1 < db/queries/important_queries.sql` | Q1–Q41 ran, exit code 0 (Q27 and Q28 fixed for migration 023, 10-05) | Pass |
 | Transaction demo | `db/demos/transaction_demo.sql` | AFTER equals BEFORE (Data Analyst `applicant_count` 3 and 3) | Pass |
-| Clean setup | Fresh `git clone` of the final commit, README only | All steps worked (9-25); 3 README gaps had been fixed earlier in the stage | Pass |
+| Migrations | `db:reset -- --yes`, `db:migrate` | `Done: 24 applied, 0 already up to date.` | Pass |
+| Clean setup | Fresh `git clone`, README only | Stage 9: every step on commit `4d67105` (9-25). Stage 10: `git clone` from GitHub, `npm install` (0 vulnerabilities), `docker compose config`; every README command run in the project folder (10-06) | Pass |
 
 ```powershell
 npm run db:reset -- --yes; npm run db:migrate; npm run db:seed; npm run db:embed
@@ -44,10 +45,10 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 1-06 | Schema | Candidate profile for a recruiter | INSERT `candidates` row for user 2 | Rejected by composite FK (user_id, role) | `violates foreign key constraint "candidates_user_fkey"` | Pass |
 | 1-07 | Schema | Plaintext password | INSERT user with hash `password123` | Rejected by CHECK | `violates check constraint "users_password_hash_bcrypt_check"` | Pass |
 | 1-08 | Schema | Delete company in use | DELETE company 3 | Rejected (ON DELETE RESTRICT) | `violates foreign key constraint "recruiters_company_fkey"` | Pass |
-| 1-09 | Migrations | Migrate an empty database | `db:reset -- --yes`, then `db:migrate` | All files applied in order | `Done: 22 applied, 0 already up to date.` | Pass |
-| 1-10 | Migrations | Migrate again | `db:migrate` | Nothing re-applied (SHA-256 tracked) | `Done: 0 applied, 22 already up to date.` | Pass |
+| 1-09 | Migrations | Migrate an empty database | `db:reset -- --yes`, then `db:migrate` | All files applied in order | `Done: 24 applied, 0 already up to date.` | Pass |
+| 1-10 | Migrations | Migrate again | `db:migrate` | Nothing re-applied (SHA-256 tracked) | `Done: 0 applied, 24 already up to date.` | Pass |
 | 1-11 | Seed | Seed twice | `db:seed` twice | Same row counts (idempotent) | Both runs: users 17, applications 18, history 40, interviews 9, offers 3, notifications 10 | Pass |
-| 1-12 | Schema | Catalogue counts | SQL on `information_schema` / `pg_catalog` | 16 domain tables, 3 views, HNSW indexes on both embedding tables | 16 tables, 3 views, 16 PK, 22 FK, 8 UNIQUE, 57 CHECK, 46 indexes (2 HNSW, 3 partial), 18 triggers | Pass |
+| 1-12 | Schema | Catalogue counts | SQL on `information_schema` / `pg_catalog` | 16 domain tables, 3 views, HNSW indexes on both embedding tables | 16 tables, 3 views, 16 PK, 22 FK, 8 UNIQUE, 57 CHECK, 46 indexes (2 HNSW, 3 partial), 19 triggers | Pass |
 
 ## Stage 2 — Triggers, functions, views, queries, transactions
 
@@ -322,7 +323,7 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 9-19 | Negative control | Without migration 021 | Restore the 019 function, run pipeline tests, re-apply 021 | 9-16 and 9-17 fail | `# pass 30  # fail 2` (exactly those two) | Pass |
 | 9-20 | Consistency | Whole database after seed | SQL counts | 0 pending offers on rejected applications, 0 accepted offers on rejected applications, 0 completed/no-show interviews in the future, 0 offered applications without an offer | 0 / 0 / 0 / 0 | Pass |
 | 9-21 | Demo data | Accepted + declined offers | `db:seed`; dashboard API | 1 accepted, 1 declined, 1 pending | Orbitline accepted 1 → **100%**; Kestrel declined 1 → **0%**; Nimbus pending → "awaiting reply" | Pass |
-| 9-22 | Demo data | Rebuild | `db:reset → migrate → seed → embed` | All succeed; every application scored | 22 applied; 12 resumes + 8 jobs embedded, 0 failed; `18 match score(s) filled in` | Pass |
+| 9-22 | Demo data | Rebuild | `db:reset → migrate → seed → embed` | All succeed; every application scored | 24 applied (final rebuild); 12 resumes + 8 jobs embedded, 0 failed; `18 match score(s) filled in` | Pass |
 | 9-23 | Demo data | Scores are real | Max `abs(match_score − (1 − (resume <=> job)))` over all applications | ≤ 0.00005 (rounding to 4 decimals) | 0.0000432 | Pass |
 | 9-24 | Regression | Stage 2 T13 | Run `stage2_advanced_tests.sql` | Passes | Failed before the fix (`cannot TRUNCATE "applications" because it has pending trigger events`, also without migration 020, so it dates from 018); passes in its own transaction | Pass |
 | 9-25 | Setup | Clean clone, README only | `git clone` of commit `4d67105`; `npm install`; `.env.local` from the template; `docker compose config`; reset; migrate; seed; embed (model downloaded fresh); `npm run build`; `npm start` and `npm run dev` with no env vars in the shell | App works from a fresh checkout | `npm install`: 0 vulnerabilities; `Done: 22 applied`; 18 scores filled in; health 200 (`17.11`, pgvector `0.8.7`); admin, recruiter and candidate log in; dashboard 100% / 0% / awaiting reply; matches 200 (Aditi 0.782, Rohan 0.666, Divya 0.503); resume upload 201 and embedded (creates `uploads/`); `/`, `/login`, `/register` 200; `/api/demo/admin` 404 under both `npm start` and `npm run dev`. (README gaps found by the first clean-clone run earlier in the stage and fixed: no `build`/`start` step, no "start over" steps, test ports 3100-3104 → 3100-3105) | Pass |
@@ -346,6 +347,19 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 9-42 | Consistency | Live auth values on the final build | Login with unknown email / wrong password / right password against `next start` | Identical 401 bodies; cookie flags | Both `{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}}`; `Path=/; Max-Age=28800; Secure; HttpOnly; SameSite=lax` | Pass |
 
 `docker compose up` was run from the project folder (same committed file; the container already existed). Running it from the clone would have recreated the existing `talentmatch-db` container with its `db/init` mount pointing into the temporary clone. The compose file in the clone was validated with `docker compose config`.
+
+
+## Stage 10 — Final checks and documentation
+
+| ID | Module | Test | Steps | Expected | Actual | Result |
+|---|---|---|---|---|---|---|
+| 10-01 | Date format unit | `formatDate` / `formatDateTime` | DATE column, timestamp, invalid input, 12-hour India time, same format as the triggers' `to_char` | One display format everywhere | 5 tests, as expected | Pass |
+| 10-02 | Reset unit | `clearUploadedResumes` | Accepts only `<repo>/uploads/resumes`; refuses `uploads`, `.`, a nested folder, `src`, a `..` path | Only the resume folder is ever emptied | 6 tests, as expected | Pass |
+| 10-03 | Offers (migration 023) | Offer while a round is scheduled | API POST offer; SQL INSERT | 409 `RULE_VIOLATION` "Complete or cancel the scheduled interview before making an offer."; 23514 from `trg_offers_interview_guard`; nothing saved | As expected | Pass |
+| 10-04 | Offers (migration 023) | After cancelling the round | Cancel the interview, then POST offer | 201, offer pending | As expected | Pass |
+| 10-05 | Queries | Q27 / Q28 with migration 023 | Whole file with `ON_ERROR_STOP=1` | Each cancels Sneha's round 2 inside its rolled-back transaction, then makes the offer; exit 0 | Q27: round 2 `cancelled`, `offered`, offer pending, after ROLLBACK `interviewed`, 0 offers, 1 scheduled round. Q28: `before: status=interviewed history=3 notifications=1` … `after: status=interviewed history=3 notifications=1`. Exit code 0 | Pass |
+| 10-06 | Setup | README commands | Fresh `git clone` from GitHub + `npm install`; `docker compose config`/`up --wait`/`stop`; migrate, seed, embed, build; `npm start` and `npm run dev` | All work | `npm install`: 0 vulnerabilities; compose healthy; health 200 (`17.11`, pgvector `0.8.7`) under both servers; admin login 200 | Pass |
+| 10-07 | Seed | Seed twice on the final seed | `db:seed` twice | Same counts | users 17, applications 18, history 40, interviews 9, offers 3, notifications 10 both times | Pass |
 
 ---
 
@@ -380,6 +394,8 @@ These were run and recorded in earlier stages but were **not** repeated in the f
 | 9 | A failing assertion inside the new rollback test left its transaction open, so `after()` clean-up was discarded and test users stayed in the database | Negative-control run (9-18) | Always ROLLBACK in `finally` |
 | 9 | An application whose offer was accepted could still be rejected | Flagged in the Stage 9 review | Migration 022 (tests 9-26, 9-27) |
 | 9 | The first version of the login limiter freed no slot when its map was full, so memory could keep growing | Unit test 9-34 | Drop the oldest entry until there is room |
+| 10 | An offer could be made and accepted while round 2 was still scheduled | Stage 10 walkthrough | Migration 023 (tests 10-03, 10-04) |
+| 10 | Q27 and Q28 in `important_queries.sql` stopped at the new 023 rule | Re-running the query file | Cancel the scheduled round inside their rolled-back transaction (10-05) |
 
 ## Known minor issues
 
