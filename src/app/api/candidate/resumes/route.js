@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { assertSameOrigin } from "@/lib/api/request";
-import { ApiError, notFound } from "@/lib/api/errors";
+import { ApiError } from "@/lib/api/errors";
 import { ROLES, withAuth } from "@/lib/auth/guards";
 import { getPool, query } from "@/lib/db";
-import { extractResumeText, MAX_RESUME_BYTES, persistResume, safeDisplayName } from "@/lib/candidate/resumes";
-
+import { extractResumeText, lockCandidateResumes, MAX_RESUME_BYTES, persistResume, removeStoredResume, safeDisplayName } from "@/lib/candidate/resumes";
 
 export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (_request, { user }) => {
   const { rows } = await query(
@@ -33,11 +32,18 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
   if (mimeType === "application/pdf" && buffer.subarray(0, 5).toString("ascii") !== "%PDF-") throw new ApiError(400, "INVALID_PDF", "The uploaded file is not a valid PDF");
   let extractedText;
   try { extractedText = await extractResumeText(buffer, mimeType); }
-  catch (err) { if (err.status) throw new ApiError(err.status, err.code || "INVALID_RESUME", err.message); throw new ApiError(400, "RESUME_PARSE_FAILED", "Could not extract text from this resume. Use a text-based PDF or .txt file."); }
+  catch (err) {
+    if (err.status) throw new ApiError(err.status, err.code || "INVALID_RESUME", err.message);
+    if (err instanceof TypeError && mimeType === "text/plain") throw new ApiError(400, "INVALID_TEXT", "Text resumes must be UTF-8 encoded");
+    console.error("[candidate] resume text extraction failed:", err?.name, err?.message);
+    throw new ApiError(500, "RESUME_PARSE_FAILED", "The server could not read text from this resume. Please try again, or upload it as a .txt file.");
+  }
   const stored = await persistResume(buffer, displayName);
   const client = await getPool().connect();
   try {
     await client.query("BEGIN");
+    await lockCandidateResumes(client, user.id);
+    // The first resume a candidate uploads becomes their primary one.
     const primary = await client.query("SELECT 1 FROM resumes WHERE candidate_id = $1 AND is_primary = TRUE LIMIT 1", [user.id]);
     const { rows } = await client.query(
       `INSERT INTO resumes (candidate_id, file_name, storage_path, mime_type, file_size_bytes, extracted_text, is_primary)
@@ -48,7 +54,6 @@ export const POST = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { use
     return NextResponse.json({ resume: rows[0] }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (err) {
     await client.query("ROLLBACK");
-    const { removeStoredResume } = await import("@/lib/candidate/resumes");
     await removeStoredResume(stored.storagePath).catch(() => {});
     throw err;
   } finally { client.release(); }

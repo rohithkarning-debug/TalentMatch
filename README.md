@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 3 (authentication + role-based access control) is done. Role dashboards and job/application features come next.
+> Status: Stage 4 (candidate module: profile, skills, PDF/TXT resume upload with a primary resume, and browsing/filtering open jobs) is done. Applying to jobs, the recruiter module and vector matching come next.
 
 ## Prerequisites
 
