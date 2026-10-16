@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, pageClass, request, StatusBadge } from "@/components/ui";
+import { Alert, buttonClass, cardClass, EMPLOYMENT_LABELS, errorLines, NotificationsLink, pageClass, request, secondaryClass, StatusBadge } from "@/components/ui";
 
 const STAGES = ["applied", "shortlisted", "interviewed", "offered", "rejected"];
 
@@ -25,7 +25,12 @@ export default function RecruiterJobs() {
           <h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">My jobs</h1>
           <p className="mt-2 text-zinc-600 dark:text-zinc-400">All job postings of your company. Applicant counts are maintained by a database trigger.</p>
         </div>
-        <Link href="/recruiter/jobs/new" className={buttonClass}>+ Post a job</Link>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/recruiter/interviews" className={secondaryClass}>Interviews</Link>
+          <Link href="/recruiter/offers" className={secondaryClass}>Offers</Link>
+          <NotificationsLink />
+          <Link href="/recruiter/jobs/new" className={buttonClass}>+ Post a job</Link>
+        </div>
       </header>
       <Alert lines={error} />
       {jobs === null ? !error && <p className="text-sm text-zinc-500">Loading jobs…</p> : <div className="space-y-3">

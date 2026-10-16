@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { NotificationsLink } from "@/components/ui";
 
 const inputClass = "mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:ring-2 focus:ring-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-50";
 const buttonClass = "rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 disabled:opacity-50 dark:bg-zinc-100 dark:text-zinc-900";
@@ -123,7 +124,7 @@ export default function CandidateDashboard() {
     <div className="mx-auto max-w-5xl space-y-6">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><Link href="/" className="text-sm text-zinc-500 hover:underline">← TalentMatch home</Link><h1 className="mt-2 text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">Candidate dashboard</h1><p className="mt-2 text-zinc-600 dark:text-zinc-400">Manage your profile, skills, and resumes.</p></div>
-        <div className="flex gap-2"><Link href="/candidate/jobs" className={secondaryClass}>Browse open jobs →</Link><Link href="/candidate/applications" className={secondaryClass}>My applications →</Link><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh data</button></div>
+        <div className="flex flex-wrap gap-2"><Link href="/candidate/jobs" className={secondaryClass}>Browse open jobs →</Link><Link href="/candidate/applications" className={secondaryClass}>My applications →</Link><Link href="/candidate/interviews" className={secondaryClass}>Interviews</Link><Link href="/candidate/offers" className={secondaryClass}>Offers</Link><NotificationsLink /><button className={secondaryClass} onClick={refresh} disabled={busy}>Refresh data</button></div>
       </header>
       {error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300">{error}</div>}
       {notice && <div role="status" className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200">{notice}</div>}

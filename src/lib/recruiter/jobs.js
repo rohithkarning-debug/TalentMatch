@@ -41,6 +41,30 @@ export async function assertJobInRecruiterCompany(jobId, user, { query = default
   return job;
 }
 
+// Same rule for one application: it must belong to a job of the recruiter's
+// company. Returns the application with its job title and candidate.
+// { lock: true } (inside a transaction) locks the application row, so two
+// recruiters acting on it at the same time are serialised.
+export async function assertApplicationInRecruiterCompany(applicationId, user, { query = defaultQuery, lock = false } = {}) {
+  const { rows } = await query(
+    `SELECT a.application_id::int AS id, a.status, a.candidate_id::int AS "candidateId",
+            j.job_id::int AS "jobId", j.title AS "jobTitle", j.company_id, c.name AS company,
+            u.full_name AS "candidateName",
+            (SELECT r.company_id FROM recruiters r WHERE r.user_id = $2) AS recruiter_company_id
+       FROM applications a
+       JOIN jobs j      ON j.job_id = a.job_id
+       JOIN companies c ON c.company_id = j.company_id
+       JOIN users u     ON u.user_id = a.candidate_id
+      WHERE a.application_id = $1
+      ${lock ? "FOR UPDATE OF a" : ""}`, [applicationId, user.id]);
+  if (!rows.length) throw notFound("Application not found");
+  const app = rows[0];
+  if (app.recruiter_company_id === null || String(app.recruiter_company_id) !== String(app.company_id)) {
+    throw forbidden("You can only manage applications for your own company's jobs");
+  }
+  return app;
+}
+
 // Replace the job's skill list: delete the old rows, insert the new ones.
 // Runs inside the caller's transaction. An unknown skill id fails the
 // job_skills_skill_fkey FOREIGN KEY and rolls everything back.

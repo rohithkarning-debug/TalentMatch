@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertSameOrigin, readJsonBody } from "@/lib/api/request";
-import { ApiError, forbidden, notFound } from "@/lib/api/errors";
+import { forbidden, notFound } from "@/lib/api/errors";
+import { toBusinessRuleError } from "@/lib/api/db-rules";
 import { ROLES, withAuth } from "@/lib/auth/guards";
 import { query } from "@/lib/db";
 import { idParamSchema } from "@/lib/validation/auth";
@@ -36,14 +37,13 @@ export const PATCH = withAuth({ roles: [ROLES.RECRUITER] }, async (request, { us
       [applicationId.data, data.status, user.id, data.note || null]);
     updated = rows[0];
   } catch (err) {
-    // RAISE EXCEPTION from the transition guard trigger. The message is our
-    // own text ("Invalid application status transition: rejected -> offered"),
-    // so it is safe and useful to show it to the recruiter.
-    if (err?.code === "23514" && /Invalid application status transition/.test(err.message)) {
-      throw new ApiError(409, "INVALID_TRANSITION", err.message, { hint: err.hint });
-    }
+    // RAISE EXCEPTION from a trigger: the transition guard ("Invalid
+    // application status transition: rejected -> offered", 409
+    // INVALID_TRANSITION) or, since migration 018, the deferred check that
+    // 'interviewed' / 'offered' need an interview / a pending offer (409
+    // RULE_VIOLATION). The messages are our own text, safe to show.
     if (err?.code === "42501") throw forbidden("You can only update applications for your own company's jobs");
-    throw err;
+    throw toBusinessRuleError(err) || err;
   }
   return NextResponse.json({ application: updated }, { headers: { "Cache-Control": "no-store" } });
 });
