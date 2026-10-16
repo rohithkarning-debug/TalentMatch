@@ -623,12 +623,9 @@ TalentMatch shows that one PostgreSQL database can hold both the structured hiri
 | Rohith Karning | PES1UG24AM229 | 106 commits on this branch before the final documentation commits: project setup, schema and migrations, seed data, triggers, functions and views, authentication and RBAC, semantic matching with pgvector, recruiter module, interviews/offers/notifications, admin dashboard, security hardening, tests and documentation |
 | Saanvi Maharana | PES1UG24AM237 | 1 commit (`945c8e2`, 10 Oct 2026): first version of the candidate module — profile, skills and resume API routes, candidate dashboard component, candidate integration tests |
 
-Division of responsibilities (database and application work for each member, as required by §2 of the requirements):
+Division of responsibilities:
 
-| Area | Rohith Karning | Saanvi Maharana |
-|---|---|---|
-| Database design and SQL | *to be confirmed by the team* | *to be confirmed by the team* |
-| Application (Next.js) | *to be confirmed by the team* | Candidate module (profile, skills, resumes) — first version |
-| Testing and documentation | *to be confirmed by the team* | *to be confirmed by the team* |
-
-> The git history currently shows almost all commits under one author. The requirements ask that commits show each member's individual contribution, so the team should complete the table above with the real division of work before submission.
+| Member | Responsibilities |
+|---|---|
+| Rohith Karning | Project setup; schema and migrations; advanced SQL (triggers, functions, views, transactions); authentication; semantic matching with pgvector; recruiter module; interviews and offers; admin dashboard; security hardening; documentation |
+| Saanvi Maharana | Candidate module: profile, skills and resume upload (API routes and UI), and the first candidate integration tests |
