@@ -423,6 +423,69 @@ describe("offers: the make-offer transaction", () => {
   });
 });
 
+// Stage 9 regression (migration 020): rejecting an 'offered' application
+// through the status dropdown used to leave its offer 'pending'.
+describe("rejecting an offered application withdraws its pending offer (trg_applications_withdraw_offer)", () => {
+  async function offeredApplicant(tag) {
+    const c = await newApplicant(tag);
+    await api(`/api/recruiter/applications/${c.applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(6) })
+      .then((r) => assert.equal(r.status, 201, r.text));
+    const made = await api(`/api/recruiter/applications/${c.applicationId}/offer`, { method: "POST", cookie: meera, json: offerBody() });
+    assert.equal(made.status, 201, made.text);
+    return { ...c, offerId: made.body.offer.id };
+  }
+  const offerStatus = async (offerId) => (await db.query("SELECT status FROM offers WHERE offer_id = $1", [offerId])).rows[0].status;
+
+  it("status PATCH offered -> rejected: offer becomes withdrawn in the same transaction, candidate notified once, cannot accept", async () => {
+    const c = await offeredApplicant("rejectapi");
+    const res = await api(`/api/recruiter/applications/${c.applicationId}`, { method: "PATCH", cookie: meera,
+      json: { status: "rejected", note: "Position filled" } });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(res.body.application.status, "rejected");
+    assert.equal(await offerStatus(c.offerId), "withdrawn");
+    // The trigger's notice is written during the UPDATE, before the function's
+    // own 'status_changed' row, so compare without order.
+    assert.deepEqual((await notificationTypes(c.id, c.applicationId)).slice(-2).sort(), ["offer_withdrawn", "status_changed"]);
+    assert.equal((await notificationTypes(c.id, c.applicationId)).filter((t) => t === "offer_withdrawn").length, 1);
+    const { rows: [{ n }] } = await db.query(
+      "SELECT count(*)::int AS n FROM offers o JOIN applications a USING (application_id) WHERE a.status = 'rejected' AND o.status = 'pending'");
+    assert.equal(n, 0, "no pending offer may stay attached to a rejected application");
+
+    const list = await api("/api/candidate/offers", { cookie: c.cookie });
+    assert.deepEqual(list.body.offers.map((o) => [o.status, o.canRespond]), [["withdrawn", false]]);
+    const accept = await api(`/api/candidate/offers/${c.offerId}/respond`, { method: "POST", cookie: c.cookie, json: { decision: "accept" } });
+    assert.equal(accept.status, 409, accept.text);
+  });
+
+  it("update_application_status() from SQL does the same; a ROLLBACK undoes both the reject and the withdrawal", async () => {
+    const c = await offeredApplicant("rejectsql");
+    const client = await db.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT update_application_status($1, 'rejected', $2, 'rolled back on purpose')", [c.applicationId, meeraId]);
+      const inside = await client.query("SELECT status FROM offers WHERE offer_id = $1", [c.offerId]);
+      assert.equal(inside.rows[0].status, "withdrawn");
+      await client.query("ROLLBACK");
+    } finally { client.release(); }
+    assert.equal((await snapshot(c.applicationId)).status, "offered");
+    assert.equal(await offerStatus(c.offerId), "pending");
+
+    await db.query("SELECT update_application_status($1, 'rejected', $2, 'Rejected from psql')", [c.applicationId, meeraId]);
+    assert.equal((await snapshot(c.applicationId)).status, "rejected");
+    assert.equal(await offerStatus(c.offerId), "withdrawn");
+  });
+
+  it("a declined offer is a final record: rejecting its application leaves it 'declined' and sends no withdrawal notice", async () => {
+    const { applicationId, id: candidateId } = cand.expiry; // its offer was declined above
+    const { rows: [o] } = await db.query("SELECT offer_id::int AS id, status FROM offers WHERE application_id = $1", [applicationId]);
+    assert.equal(o.status, "declined");
+    const res = await api(`/api/recruiter/applications/${applicationId}`, { method: "PATCH", cookie: meera, json: { status: "rejected" } });
+    assert.equal(res.status, 200, res.text);
+    assert.equal(await offerStatus(o.id), "declined");
+    assert.equal((await notificationTypes(candidateId, applicationId)).includes("offer_withdrawn"), false);
+  });
+});
+
 describe("offer response notifies the job poster and the offer maker", () => {
   it("Arjun posted the job, Meera made the offer: both are told, nobody else", async () => {
     const res = await api("/api/recruiter/jobs", { method: "POST", cookie: arjun, json: {
