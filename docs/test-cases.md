@@ -380,3 +380,9 @@ These were run and recorded in earlier stages but were **not** repeated in the f
 | 9 | A failing assertion inside the new rollback test left its transaction open, so `after()` clean-up was discarded and test users stayed in the database | Negative-control run (9-18) | Always ROLLBACK in `finally` |
 | 9 | An application whose offer was accepted could still be rejected | Flagged in the Stage 9 review | Migration 022 (tests 9-26, 9-27) |
 | 9 | The first version of the login limiter freed no slot when its map was full, so memory could keep growing | Unit test 9-34 | Drop the oldest entry until there is room |
+
+## Known minor issues
+
+| Where | Issue | Impact | Why it is not fixed |
+|---|---|---|---|
+| Recruiter → job → Ranked applicants | After a refused status change (e.g. the 409 for `rejected -> shortlisted`), that applicant's row keeps showing the error and the chosen status until the page is reloaded, even after other actions on the page refresh the list. | Cosmetic: the database state is correct and the message is accurate for the attempt that was made. | Found in the Stage 10 walkthrough and left as is on purpose; the row keeps its own form state, and the reload clears it. |
