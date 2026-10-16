@@ -6,14 +6,14 @@ import { z } from "zod";
 
 const utf8Bytes = (s) => new TextEncoder().encode(s).length;
 
-const email = z
+export const email = z
   .string({ error: "Email is required" })
   .trim()
   .toLowerCase()
   .max(255, "Email is too long")
   .pipe(z.email("Enter a valid email address"));
 
-const newPassword = z
+export const newPassword = z
   .string({ error: "Password is required" })
   .min(8, "Password must be at least 8 characters")
   .refine((s) => utf8Bytes(s) <= 72, "Password must be at most 72 bytes")
