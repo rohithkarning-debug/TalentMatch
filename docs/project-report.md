@@ -524,8 +524,6 @@ Configuration comes only from environment variables (`DATABASE_URL`, `AUTH_JWT_S
 
 All screenshots are in [`docs/screenshots/final/`](screenshots/final/) and were taken from the final build with the seeded demo data.
 
-The UI was later restyled (off-white page, navy text, one #635BFF accent, Inter font, soft card shadows, angled gradient on the landing and sign-in pages). Screenshots 01, 06, 11, 25, 29, 30 and 31 to 34 show the new style; the others were taken before the restyle and show the same pages and data with the earlier colours.
-
 ### Landing page
 
 | | |
