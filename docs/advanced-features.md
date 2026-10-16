@@ -7,7 +7,7 @@ All outputs below are real, captured on 2026-10-09 from PostgreSQL 17.11 running
 
 | Requirement concept (PDF §7) | Where |
 |---|---|
-| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9); Stage 9: `trg_applications_withdraw_offer` (020) and the completion rule in `trg_interviews_guard` (021; §14). 17 in total |
+| Triggers | 13 triggers (010, 011); Stage 7: `trg_interviews_guard`, `trg_offers_guard` and the **deferred constraint trigger** `trg_applications_stage_records` (018, 019; §9); Stage 9: `trg_applications_withdraw_offer` (020), the completion rule in `trg_interviews_guard` (021) and `trg_applications_accepted_offer_guard` (022; §14). 18 in total |
 | Stored procedures / functions | `generate_hiring_pipeline_report`, `update_application_status`, `is_valid_status_transition` (+ trigger functions); Stage 5: `rank_candidates_for_job`; Stage 6: `compute_match_score` (016) |
 | Views | `recruiter_pipeline_view`, `candidate_application_view`, `company_hiring_summary` |
 | Transactions | Stage 7 **make offer**, accept/decline, withdraw, **schedule interview** (§10, §11; Q27, Q28), Stage 6 **apply to job** (`src/lib/applications.js`, §7), job create/edit/delete, resume upload, `update_application_status` (atomic), seed and migrations, `transaction_demo.sql` |
@@ -516,7 +516,7 @@ The role is a constant in the SQL; the strict zod schema rejects a `role` field 
 
 **Moving a recruiter to another company** is blocked by the database while they own jobs. `jobs (recruiter_id, company_id)` is a composite FK to `recruiters (user_id, company_id)` with no ON UPDATE action, so changing `recruiters.company_id` would leave the jobs pointing at a (recruiter, company) pair that no longer exists. PostgreSQL refuses (`jobs_recruiter_fkey`), and the API returns 409 `RECRUITER_OWNS_JOBS`. A recruiter with no jobs can be moved.
 
-## 14. Stage 9: consistency fixes (migrations 020, 021)
+## 14. Stage 9: consistency fixes (migrations 020–022)
 
 Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for the API, `update_application_status()` from psql, and plain SQL alike.
 
@@ -524,6 +524,7 @@ Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for
 |---|---|---|
 | `trg_applications_withdraw_offer` → `withdraw_pending_offer_on_reject()` | AFTER UPDATE OF status ON applications, `WHEN (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected')` | The application's **pending** offer becomes `withdrawn` and the candidate gets one `offer_withdrawn` notification, in the same transaction as the reject. Accepted / declined offers are left alone (they record the candidate's decision) |
 | `trg_interviews_guard` (function replaced in 021) | BEFORE UPDATE (new rule) | `completed` or `no_show` only when `scheduled_at <= now()`; the time cannot be changed in the same UPDATE that records the outcome |
+| `trg_applications_accepted_offer_guard` → `guard_reject_after_accepted_offer()` (022) | BEFORE UPDATE OF status ON applications, `WHEN (NEW.status = 'rejected' AND OLD.status IS DISTINCT FROM 'rejected')` | An application whose offer was **accepted** cannot be rejected. The API answers 409 `RULE_VIOLATION` "Application N cannot be rejected: the candidate accepted its offer on YYYY-MM-DD" |
 
 **Why a trigger and not code in the API route?** Rejecting can happen through the status dropdown (PATCH route), `update_application_status()` called from psql, or a direct `UPDATE`. A rule in one route would miss the other two. The trigger runs inside the transaction of whatever changed the status: if the reject rolls back, the withdrawal rolls back too (integration test "update_application_status() from SQL does the same; a ROLLBACK undoes both").
 
@@ -532,6 +533,8 @@ Two gaps flagged in Stage 7 are now closed **in the database**, so they hold for
 **No double notification with `withdrawOffer()`.** The recruiter's Withdraw button (`src/lib/offers.js`) first sets the offer to `withdrawn` and then rejects the application. When the trigger fires, nothing is pending any more, so it does nothing and the candidate still gets exactly one `offer_withdrawn`.
 
 **Why also `no_show`?** Both `completed` and `no_show` describe what happened at the interview time, so neither can be true before it. `cancelled` stays allowed at any time. The second rule (no reschedule + complete in one statement) closes the loophole `UPDATE … SET scheduled_at = now() - interval '1 hour', status = 'completed'`, which would otherwise pass because the time check would see the new, past time.
+
+**Why BEFORE for 022?** The change has to be refused before the row is written, so nothing else runs: no history row, no 020 withdrawal, no notification. An accepted offer is frozen (019), so the application that points at it must not contradict it either. Pending offers (withdrawn by 020) and declined offers (closed out by the recruiter) can still be rejected.
 
 **Why not a CHECK constraint?** Same reason as 018: `scheduled_at <= now()` changes its answer over time, so it can only be checked at the moment of the change.
 
