@@ -612,3 +612,154 @@ SELECT u.email, u.role, count(*) AS unread
  WHERE NOT n.is_read
  GROUP BY u.email, u.role
  ORDER BY unread DESC, u.email;
+
+-- ===========================================================================
+-- Stage 8: admin dashboard (src/lib/admin/dashboard.js runs these)
+-- ===========================================================================
+
+\echo '\n=== Q33 Platform totals (scalar subqueries) ==='
+-- DEMONSTRATES: independent scalar subqueries combined into one row.
+-- RETURNS: candidates, recruiters (all / active), companies, open jobs,
+--          applications, interviews, offers.
+-- WHY: the KPI cards on /admin.
+SELECT (SELECT count(*) FROM candidates)                                   AS candidates,
+       (SELECT count(*) FROM recruiters)                                   AS recruiters,
+       (SELECT count(*) FROM recruiters r JOIN users u ON u.user_id = r.user_id
+         WHERE u.is_active)                                                AS active_recruiters,
+       (SELECT count(*) FROM companies)                                    AS companies,
+       (SELECT count(*) FROM jobs WHERE status = 'open')                   AS open_jobs,
+       (SELECT count(*) FROM applications)                                 AS applications,
+       (SELECT count(*) FROM interviews)                                   AS interviews,
+       (SELECT count(*) FROM offers)                                       AS offers;
+
+\echo '\n=== Q34 Applications per pipeline stage, every stage shown (GROUP BY + LEFT JOIN) ==='
+-- DEMONSTRATES: unnest(...) WITH ORDINALITY as a small lookup table, LEFT JOIN
+--               so a stage with no applications still appears with 0, GROUP BY,
+--               ORDER BY the funnel order.
+-- WHY: the "Applications by stage" bar chart.
+SELECT s.status, count(a.application_id) AS applications
+  FROM unnest(ARRAY['applied', 'shortlisted', 'interviewed', 'offered', 'rejected'])
+       WITH ORDINALITY AS s(status, ord)
+  LEFT JOIN applications a ON a.status = s.status
+ GROUP BY s.status, s.ord
+ ORDER BY s.ord;
+
+\echo '\n=== Q35 Top demanded skills across open jobs (GROUP BY + HAVING) ==='
+-- DEMONSTRATES: three-table JOIN, GROUP BY, HAVING on an aggregate, FILTER.
+-- RETURNS: skills that at least 2 open jobs list, with how many require them.
+-- WHY: the "Top demanded skills" chart: what candidates should learn.
+SELECT s.name, s.category,
+       count(*)                                AS open_jobs,
+       count(*) FILTER (WHERE js.is_required)  AS required_in
+  FROM job_skills js
+  JOIN jobs j   ON j.job_id = js.job_id
+  JOIN skills s ON s.skill_id = js.skill_id
+ WHERE j.status = 'open'
+ GROUP BY s.skill_id, s.name, s.category
+HAVING count(*) >= 2
+ ORDER BY open_jobs DESC, s.name
+ LIMIT 10;
+
+\echo '\n=== Q36 Average match score by outcome (view + GROUP BY) ==='
+-- DEMONSTRATES: GROUP BY over the candidate_application_view view; avg()
+--               ignores NULL scores, count(col) vs count(*).
+-- RETURNS: per current status: applications, how many are scored, mean
+--          cosine similarity.
+-- WHY: does semantic matching predict outcomes? Seed data: interviewed 0.805
+--      and offered 0.666 vs rejected 0.570 (small groups, indicative only).
+SELECT application_status,
+       count(*)                    AS applications,
+       count(match_score)          AS scored,
+       round(avg(match_score), 4)  AS avg_match_score
+  FROM candidate_application_view
+ GROUP BY application_status
+ ORDER BY array_position(ARRAY['applied', 'shortlisted', 'interviewed', 'offered', 'rejected'], application_status::text);
+
+\echo '\n=== Q37 Per-company table: offer acceptance, interview rating, above-average flag ==='
+-- DEMONSTRATES: LEFT JOIN to a view (company_hiring_summary drops companies
+--               with no applications via HAVING), aggregated derived tables
+--               joined once each (no row multiplication), a scalar SUBQUERY
+--               for the platform average, nullif() to avoid dividing by zero.
+-- acceptance = accepted / (accepted + declined); pending/withdrawn excluded.
+-- WHY: the Companies table on /admin.
+SELECT c.name,
+       (SELECT count(*) FROM jobs j WHERE j.company_id = c.company_id) AS jobs,
+       coalesce(s.total_applications, 0)                               AS applications,
+       coalesce(o.offers_made, 0)                                      AS offers_made,
+       round(100.0 * o.accepted / nullif(o.accepted + o.declined, 0), 1) AS acceptance_rate_pct,
+       r.avg_rating                                                    AS avg_interview_rating,
+       coalesce(s.total_applications, 0) > (
+           SELECT avg(n) FROM (SELECT count(a.application_id) AS n
+                                 FROM companies c2
+                                 LEFT JOIN jobs j2        ON j2.company_id = c2.company_id
+                                 LEFT JOIN applications a ON a.job_id = j2.job_id
+                                GROUP BY c2.company_id) per_company)   AS above_average
+  FROM companies c
+  LEFT JOIN company_hiring_summary s ON s.company_id = c.company_id
+  LEFT JOIN (SELECT j.company_id, count(*) AS offers_made,
+                    count(*) FILTER (WHERE o.status = 'accepted') AS accepted,
+                    count(*) FILTER (WHERE o.status = 'declined') AS declined
+               FROM offers o
+               JOIN applications a ON a.application_id = o.application_id
+               JOIN jobs j         ON j.job_id = a.job_id
+              GROUP BY j.company_id) o ON o.company_id = c.company_id
+  LEFT JOIN (SELECT j.company_id, round(avg(i.rating), 2) AS avg_rating
+               FROM interviews i
+               JOIN applications a ON a.application_id = i.application_id
+               JOIN jobs j         ON j.job_id = a.job_id
+              WHERE i.rating IS NOT NULL
+              GROUP BY j.company_id) r ON r.company_id = c.company_id
+ ORDER BY applications DESC, c.name;
+
+\echo '\n=== Q38 Companies with above-average applications (subquery in HAVING) ==='
+-- DEMONSTRATES: GROUP BY + HAVING compared against a scalar subquery.
+-- RETURNS: only the companies whose application count beats the average.
+SELECT c.name, count(a.application_id) AS applications
+  FROM companies c
+  LEFT JOIN jobs j         ON j.company_id = c.company_id
+  LEFT JOIN applications a ON a.job_id = j.job_id
+ GROUP BY c.company_id, c.name
+HAVING count(a.application_id) > (SELECT count(*)::numeric / (SELECT count(*) FROM companies) FROM applications)
+ ORDER BY applications DESC;
+
+\echo '\n=== Q39 Applications per job (stored function) and recruiter workload (view) ==='
+-- DEMONSTRATES: calling a set-returning function in FROM; re-aggregating a
+--               view with GROUP BY.
+-- WHY: the "Applications per job" table on /admin and the workload columns
+--      on /admin/recruiters.
+SELECT company_name, job_title, job_status, total_applications, shortlist_rate_pct, offer_rate_pct
+  FROM generate_hiring_pipeline_report()
+ ORDER BY total_applications DESC, company_name, job_title;
+SELECT recruiter_name, count(*) AS jobs,
+       count(*) FILTER (WHERE job_status = 'open') AS open_jobs,
+       sum(active_in_pipeline)                     AS active_in_pipeline
+  FROM recruiter_pipeline_view
+ WHERE recruiter_id IS NOT NULL
+ GROUP BY recruiter_id, recruiter_name
+ ORDER BY active_in_pipeline DESC;
+
+\echo '\n=== Q40 Transaction: create a recruiter account, rolled back when the profile insert fails ==='
+-- DEMONSTRATES: one transaction across users + recruiters. The recruiters
+--               INSERT fails (company 999999 does not exist), so the app
+--               issues ROLLBACK and the users row disappears too.
+-- (The hash is a placeholder in valid bcrypt format; the app hashes the real
+--  password with bcryptjs BEFORE the transaction starts.)
+BEGIN;
+INSERT INTO users (email, password_hash, full_name, role)
+VALUES ('q40.recruiter@test.example', '$2b$12$abcdefghijklmnopqrstuuMaYtMQ2zwhM5r3YbQ7wq4l7lTYF1zZW', 'Query Forty', 'recruiter');
+SELECT count(*) AS users_inside_tx FROM users WHERE email = 'q40.recruiter@test.example';
+DO $$ BEGIN
+    INSERT INTO recruiters (user_id, company_id)
+    SELECT user_id, 999999 FROM users WHERE email = 'q40.recruiter@test.example';
+EXCEPTION WHEN foreign_key_violation THEN
+    RAISE NOTICE 'recruiters insert failed: % (the app ROLLBACKs here)', SQLERRM;
+END $$;
+ROLLBACK;
+SELECT count(*) AS users_after_rollback FROM users WHERE email = 'q40.recruiter@test.example';
+
+\echo '\n=== Q41 Deleting a company that still has recruiters and jobs is refused (ON DELETE RESTRICT) ==='
+DO $$ BEGIN
+    DELETE FROM companies WHERE name = 'Nimbus Analytics Pvt Ltd';
+EXCEPTION WHEN foreign_key_violation THEN
+    RAISE NOTICE 'refused: %', SQLERRM;
+END $$;
