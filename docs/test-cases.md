@@ -1,6 +1,6 @@
 # TalentMatch — Test Cases and Results (final, Stage 9)
 
-Every row marked **Pass** below was run on **2026-10-16** in the final Stage 9 run, on a database rebuilt from scratch (`db:reset → db:migrate → db:seed → db:embed`) with the final code. Nothing is marked Pass from an older run. Checks from earlier stages that were *not* repeated are listed separately in [§ Not re-run in Stage 9](#not-re-run-in-stage-9) and are not counted.
+Every row marked **Pass** below was run on **2026-10-16** during Stage 9. The suites in the summary (build, unit, integration, SQL scripts) and the clean-clone check were run on the final commit, on a database rebuilt from scratch (`db:reset → db:migrate → db:seed → db:embed`). The negative controls (9-18, 9-19, 9-28, 9-41) temporarily break one fix on purpose, so each was run while that fix was being added and then the fix was restored. Nothing is marked Pass from an earlier stage. Checks from earlier stages that were *not* repeated are listed separately in [§ Not re-run in Stage 9](#not-re-run-in-stage-9) and are not counted.
 
 **Environment:** Windows 11, Node.js 22.19.0, Next.js 16.4.0 production build (`next start`), PostgreSQL 17.11 + pgvector 0.8.7 in Docker (port 5433), model `sentence-transformers/all-MiniLM-L6-v2`.
 
@@ -11,13 +11,13 @@ Every row marked **Pass** below was run on **2026-10-16** in the final Stage 9 r
 | Suite | Command | Real output | Result |
 |---|---|---|---|
 | Build | `npm run build` | exit 0, "Compiled successfully"; 1 Turbopack warning ("Dynamic filesystem access…", `src/app/api/candidate/resumes/[resumeId]/route.js`), present since Stage 4 | Pass |
-| Unit tests | `npm run test:unit` | `# tests 67  # pass 67  # fail 0` | Pass |
-| Integration tests | `npm run test:integration` | `# tests 138  # suites 34  # pass 138  # fail 0` (53.8 s) | Pass |
+| Unit tests | `npm run test:unit` | `# tests 74  # suites 22  # pass 74  # fail 0` | Pass |
+| Integration tests | `npm run test:integration` | `# tests 145  # suites 35  # pass 145  # fail 0` (67.1 s) | Pass |
 | Stage 1 SQL | `db/tests/stage1_constraint_tests.sql` | 8 of 8 invalid writes rejected, each rolled back | Pass |
 | Stage 2 SQL | `db/tests/stage2_advanced_tests.sql` | 27 PASS lines (T1–T13), `=== All Stage 2 tests passed …` | Pass |
 | Important queries | `psql -v ON_ERROR_STOP=1 < db/queries/important_queries.sql` | Q1–Q41 ran, exit code 0 | Pass |
 | Transaction demo | `db/demos/transaction_demo.sql` | AFTER equals BEFORE (Data Analyst `applicant_count` 3 and 3) | Pass |
-| Clean setup | Fresh `git clone`, README steps only | All steps worked; 3 README gaps fixed (9-25) | Pass |
+| Clean setup | Fresh `git clone` of the final commit, README only | All steps worked (9-25); 3 README gaps had been fixed earlier in the stage | Pass |
 
 ```powershell
 npm run db:reset -- --yes; npm run db:migrate; npm run db:seed; npm run db:embed
@@ -44,10 +44,10 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 1-06 | Schema | Candidate profile for a recruiter | INSERT `candidates` row for user 2 | Rejected by composite FK (user_id, role) | `violates foreign key constraint "candidates_user_fkey"` | Pass |
 | 1-07 | Schema | Plaintext password | INSERT user with hash `password123` | Rejected by CHECK | `violates check constraint "users_password_hash_bcrypt_check"` | Pass |
 | 1-08 | Schema | Delete company in use | DELETE company 3 | Rejected (ON DELETE RESTRICT) | `violates foreign key constraint "recruiters_company_fkey"` | Pass |
-| 1-09 | Migrations | Migrate an empty database | `db:reset -- --yes`, then `db:migrate` | All files applied in order | `Done: 21 applied, 0 already up to date.` | Pass |
-| 1-10 | Migrations | Migrate again | `db:migrate` | Nothing re-applied (SHA-256 tracked) | `Done: 0 applied, 21 already up to date.` | Pass |
+| 1-09 | Migrations | Migrate an empty database | `db:reset -- --yes`, then `db:migrate` | All files applied in order | `Done: 22 applied, 0 already up to date.` | Pass |
+| 1-10 | Migrations | Migrate again | `db:migrate` | Nothing re-applied (SHA-256 tracked) | `Done: 0 applied, 22 already up to date.` | Pass |
 | 1-11 | Seed | Seed twice | `db:seed` twice | Same row counts (idempotent) | Both runs: users 17, applications 18, history 40, interviews 9, offers 3, notifications 10 | Pass |
-| 1-12 | Schema | Catalogue counts | SQL on `information_schema` / `pg_catalog` | 16 domain tables, 3 views, HNSW indexes on both embedding tables | 16 tables, 3 views, 16 PK, 22 FK, 8 UNIQUE, 57 CHECK, 46 indexes (2 HNSW, 3 partial), 17 triggers | Pass |
+| 1-12 | Schema | Catalogue counts | SQL on `information_schema` / `pg_catalog` | 16 domain tables, 3 views, HNSW indexes on both embedding tables | 16 tables, 3 views, 16 PK, 22 FK, 8 UNIQUE, 57 CHECK, 46 indexes (2 HNSW, 3 partial), 18 triggers | Pass |
 
 ## Stage 2 — Triggers, functions, views, queries, transactions
 
@@ -111,14 +111,14 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 3-32 | Session | `/me` anonymous | GET | 401 | As expected | Pass |
 | 3-33 | Session | `/me` signed in | GET | Exactly `id, email, fullName, role` | As expected | Pass |
 | 3-34 | Session | Forged tokens | Garbage, tampered, wrong secret, `none`, expired | 401 | As expected | Pass |
-| 3-35 | Session | Role in token ≠ DB | Signed token claiming admin | 401 (DB is the source of truth) | As expected | Pass |
+| 3-35 | Session | Role in token ≠ DB | Validly signed token claiming admin for a candidate, on `/me` and `/api/admin/dashboard`; token for a missing user | 401 (DB is the source of truth) | As expected | Pass |
 | 3-36 | Logout | Clear cookie | POST logout | `Max-Age=0`, same flags; `/me` then 401 | As expected | Pass |
 | 3-37 | Logout | Without session | POST logout | 200 | As expected | Pass |
-| 3-38 | RBAC | Anonymous on role routes | `/api/demo/*` | 401 ×3 | As expected | Pass |
-| 3-39 | RBAC | Admin | Demo routes | 200 own, 403 others | As expected | Pass |
-| 3-40 | RBAC | Recruiter | Demo routes | 200 own, 403 others | As expected | Pass |
-| 3-41 | RBAC | Candidate | Demo routes | 200 own, 403 others | As expected | Pass |
-| 3-42 | RBAC | Ownership | `/api/demo/users/:id` | Own 200, other 403, admin 200 / missing 404, `abc` 400, anonymous 401 | As expected | Pass |
+| 3-38 | RBAC | Anonymous on role routes | GET `/api/admin/dashboard`, `/api/recruiter/jobs`, `/api/candidate/profile` | 401 ×3 | As expected | Pass |
+| 3-39 | RBAC | Demo routes removed (Stage 9) | Admin GETs `/api/demo/admin`, `/recruiter`, `/candidate`, `/users/1` | 404 ×4 | As expected | Pass |
+| 3-40 | RBAC | Admin | The three role routes | 200 on the admin dashboard, 403 `FORBIDDEN` on the other two | As expected | Pass |
+| 3-41 | RBAC | Recruiter | The three role routes | 200 on recruiter jobs, 403 on the other two | As expected | Pass |
+| 3-42 | RBAC | Candidate | The three role routes | 200 on candidate profile, 403 on the other two | As expected | Pass |
 | 3-43 | Secrets | Responses | Scan every response body and header seen in the run | No JWT secret, DB password or bcrypt hash | As expected | Pass |
 | 3-44 | Secrets | Git | Scan tracked files | No secret; `.env.local` not tracked | As expected | Pass |
 
@@ -192,7 +192,7 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 6-06 | Validation unit | Status values | Five statuses | Accepted (rules are in the DB) | As expected | Pass |
 | 6-07 | Validation unit | Bad status | `hired`, `changedBy` | Rejected | As expected | Pass |
 | 6-08 | Flow | Post a job | Meera POSTs with skills | 201, her company, `applicant_count` 0, embedded | As expected | Pass |
-| 6-09 | Flow | Apply | New candidate applies | `match_score` = `1 - (resume <=> job)`; count +1 | `match_score stored 0.8431, recomputed 1 - (a <=> b) = 0.8430824969361739` | Pass |
+| 6-09 | Flow | Apply | New candidate applies | `match_score` = `1 - (resume <=> job)`; count +1 | `match_score stored 0.7972, recomputed 1 - (a <=> b) = 0.797152578830719` | Pass |
 | 6-10 | Flow | Apply side effects | Read history + notifications | `NULL → applied` row; recruiter notified | As expected | Pass |
 | 6-11 | Flow | Shortlist | PATCH status | Trigger history row with actor + note; candidate notified | As expected | Pass |
 | 6-12 | Flow | Views agree | Applicants list, My Jobs, matches, My Applications | Same score and counts everywhere | As expected | Pass |
@@ -320,12 +320,30 @@ Test data clean-up after the run: 0 `@test.example` users; 18 applications, 3 of
 | 9-17 | Consistency | Complete a future interview (SQL) | UPDATE to `completed`, `no_show`; move-to-past + complete in one UPDATE | 23514 ×3, row unchanged | As expected | Pass |
 | 9-18 | Negative control | Without migration 020 | Drop `trg_applications_withdraw_offer`, run pipeline tests, recreate | 9-13 and 9-14 fail | `# pass 29  # fail 2` (exactly those two) | Pass |
 | 9-19 | Negative control | Without migration 021 | Restore the 019 function, run pipeline tests, re-apply 021 | 9-16 and 9-17 fail | `# pass 30  # fail 2` (exactly those two) | Pass |
-| 9-20 | Consistency | Whole database after seed | SQL counts | 0 pending offers on rejected applications, 0 completed/no-show interviews in the future, 0 offered applications without an offer | 0 / 0 / 0 | Pass |
+| 9-20 | Consistency | Whole database after seed | SQL counts | 0 pending offers on rejected applications, 0 accepted offers on rejected applications, 0 completed/no-show interviews in the future, 0 offered applications without an offer | 0 / 0 / 0 / 0 | Pass |
 | 9-21 | Demo data | Accepted + declined offers | `db:seed`; dashboard API | 1 accepted, 1 declined, 1 pending | Orbitline accepted 1 → **100%**; Kestrel declined 1 → **0%**; Nimbus pending → "awaiting reply" | Pass |
-| 9-22 | Demo data | Rebuild | `db:reset → migrate → seed → embed` | All succeed; every application scored | 21 applied; 12 resumes + 8 jobs embedded, 0 failed; `18 match score(s) filled in` | Pass |
+| 9-22 | Demo data | Rebuild | `db:reset → migrate → seed → embed` | All succeed; every application scored | 22 applied; 12 resumes + 8 jobs embedded, 0 failed; `18 match score(s) filled in` | Pass |
 | 9-23 | Demo data | Scores are real | Max `abs(match_score − (1 − (resume <=> job)))` over all applications | ≤ 0.00005 (rounding to 4 decimals) | 0.0000432 | Pass |
 | 9-24 | Regression | Stage 2 T13 | Run `stage2_advanced_tests.sql` | Passes | Failed before the fix (`cannot TRUNCATE "applications" because it has pending trigger events`, also without migration 020, so it dates from 018); passes in its own transaction | Pass |
-| 9-25 | Setup | Clean clone, README only | `git clone`; `npm install`; `.env.local` from the template; `docker compose … up -d --wait`; reset; migrate; seed; embed (model downloaded fresh); `npm run build`; `npm start` and `npm run dev` | App works from a fresh checkout | health 200 (`17.11`, pgvector `0.8.7`); admin, recruiter and candidate log in; matches 200 (Aditi 0.782, Rohan 0.666, Divya 0.503); resume upload 201 and embedded (creates `uploads/`); `/`, `/login`, `/register` 200; `npm start` works without env vars in the shell. README gaps found and fixed: no `build`/`start` step, no "start over" steps, test ports 3100-3104 → 3100-3105 | Pass |
+| 9-25 | Setup | Clean clone, README only | `git clone` of commit `4d67105`; `npm install`; `.env.local` from the template; `docker compose config`; reset; migrate; seed; embed (model downloaded fresh); `npm run build`; `npm start` and `npm run dev` with no env vars in the shell | App works from a fresh checkout | `npm install`: 0 vulnerabilities; `Done: 22 applied`; 18 scores filled in; health 200 (`17.11`, pgvector `0.8.7`); admin, recruiter and candidate log in; dashboard 100% / 0% / awaiting reply; matches 200 (Aditi 0.782, Rohan 0.666, Divya 0.503); resume upload 201 and embedded (creates `uploads/`); `/`, `/login`, `/register` 200; `/api/demo/admin` 404 under both `npm start` and `npm run dev`. (README gaps found by the first clean-clone run earlier in the stage and fixed: no `build`/`start` step, no "start over" steps, test ports 3100-3104 → 3100-3105) | Pass |
+
+| 9-26 | Consistency | Reject after an accepted offer (API) | Status PATCH `rejected` on the application whose offer the candidate accepted | 409 `RULE_VIOLATION` "…cannot be rejected: the candidate accepted its offer…"; status, offer, history, notifications unchanged | As expected | Pass |
+| 9-27 | Consistency | Reject after an accepted offer (SQL) | `update_application_status(…, 'rejected')`; plain `UPDATE … SET status = 'rejected'` | 23514 ×2 from `trg_applications_accepted_offer_guard`; nothing changed | As expected | Pass |
+| 9-28 | Negative control | Without migration 022 | Drop `trg_applications_accepted_offer_guard`, run pipeline tests, recreate | 9-26 and 9-27 fail | `# pass 32  # fail 2` (exactly those two) | Pass |
+| 9-29 | Rate limit unit | Limits | Constants | 5 attempts, 15 minutes | As expected | Pass |
+| 9-30 | Rate limit unit | Block after 5 | 6 attempts on a fake clock; +60 s | 6th blocked, `retryAfterSeconds` 900 then 840 | As expected | Pass |
+| 9-31 | Rate limit unit | Reset | 4 attempts, reset, 6 more | 5 allowed after reset, 6th blocked | As expected | Pass |
+| 9-32 | Rate limit unit | Window end | 15 min − 1 ms, then 15 min | Blocked, then allowed | As expected | Pass |
+| 9-33 | Rate limit unit | Independent keys | Other email; other IP | Allowed | As expected | Pass |
+| 9-34 | Rate limit unit | Bounded memory | `maxEntries` 3; expired and live keys | Expired pruned first, then oldest; size never above 3 | As expected (failed on the first version: a full map grew to 4; fixed before commit) | Pass |
+| 9-35 | Rate limit unit | Client IP | `X-Forwarded-For` list, `X-Real-IP`, none | First XFF entry / X-Real-IP / `unknown` | As expected | Pass |
+| 9-36 | Rate limit | Lockout | 5 wrong passwords, a 6th, then the right password; then another IP | 401 ×5; 429 `TOO_MANY_ATTEMPTS` "Try again in 15 minutes.", `Retry-After` 1–900, no cookie; right password still 429; other IP 200 | As expected | Pass |
+| 9-37 | Rate limit | Reset on success | 4 wrong, right, 5 wrong, 1 more | 401 ×4, 200, 401 ×5, 429 | As expected | Pass |
+| 9-38 | Rate limit | Unknown email | 6 attempts for a non-existent account | 401 ×5 then 429 (no account enumeration) | As expected | Pass |
+| 9-39 | Rate limit | Invalid input | 8 requests without a password, then a correct login | 400 ×8 (not counted), then 200 | As expected | Pass |
+| 9-40 | Rate limit | Parallel attempts | 50 wrong logins at once | At most 5 password checks | `{ 401: 5, 429: 45 }` | Pass |
+| 9-41 | Negative control | Limiter disabled | `consume()` replaced by "always allowed", rebuild, run `security.test.js`, restore (byte-identical) and rebuild | The limiting tests fail | `# pass 7  # fail 4` (9-36, 9-37, 9-38, 9-40; 9-39 passes either way) | Pass |
+| 9-42 | Consistency | Live auth values on the final build | Login with unknown email / wrong password / right password against `next start` | Identical 401 bodies; cookie flags | Both `{"error":{"code":"INVALID_CREDENTIALS","message":"Invalid email or password"}}`; `Path=/; Max-Age=28800; Secure; HttpOnly; SameSite=lax` | Pass |
 
 `docker compose up` was run from the project folder (same committed file; the container already existed). Running it from the clone would have recreated the existing `talentmatch-db` container with its `db/init` mount pointing into the temporary clone. The compose file in the clone was validated with `docker compose config`.
 
@@ -360,3 +378,5 @@ These were run and recorded in earlier stages but were **not** repeated in the f
 | 9 | No security headers; health leaked the server build; CSRF check ignored `Sec-Fetch-Site` | Live probe of `next start` | See [security-review.md §3](security-review.md#3-problems-found-and-fixed-in-stage-9) |
 | 9 | Stage 2 T13 failed since migration 018 | Re-running every SQL suite | T13 in its own transaction |
 | 9 | A failing assertion inside the new rollback test left its transaction open, so `after()` clean-up was discarded and test users stayed in the database | Negative-control run (9-18) | Always ROLLBACK in `finally` |
+| 9 | An application whose offer was accepted could still be rejected | Flagged in the Stage 9 review | Migration 022 (tests 9-26, 9-27) |
+| 9 | The first version of the login limiter freed no slot when its map was full, so memory could keep growing | Unit test 9-34 | Drop the oldest entry until there is room |
