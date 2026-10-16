@@ -6,7 +6,7 @@ import CandidateInterviews from "@/components/candidate/CandidateInterviews";
 export const metadata = { title: "My interviews · TalentMatch" };
 
 export default function CandidateInterviewsPage() {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-5xl p-6 text-sm text-zinc-500">Loading my interviews…</main>}><CandidateInterviewsContent /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-6xl px-4 py-8 text-sm sm:px-6 lg:px-8 text-slate-500">Loading my interviews…</main>}><CandidateInterviewsContent /></Suspense>;
 }
 
 async function CandidateInterviewsContent() {

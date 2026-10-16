@@ -56,14 +56,14 @@ export default function RegisterForm() {
                value={email} onChange={setEmail} error={fieldErrors.email} disabled={loading} />
         <Field id="password" label="Password" type="password" autoComplete="new-password"
                value={password} onChange={setPassword} error={fieldErrors.password} disabled={loading} />
-        <p className="-mt-2 text-xs text-zinc-500">At least 8 characters, including a letter and a number.</p>
+        <p className="-mt-2 text-xs text-slate-500">At least 8 characters, including a letter and a number.</p>
         <Field id="confirm" label="Confirm password" type="password" autoComplete="new-password"
                value={confirm} onChange={setConfirm} error={fieldErrors.confirm} disabled={loading} />
         <SubmitButton loading={loading} loadingText="Creating account…">Create account</SubmitButton>
       </form>
-      <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mt-6 text-center text-sm text-slate-600">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-zinc-900 underline dark:text-zinc-100">
+        <Link href="/login" className="font-medium text-indigo-600 hover:text-indigo-700 hover:underline">
           Sign in
         </Link>
       </p>

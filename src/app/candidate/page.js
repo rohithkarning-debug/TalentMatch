@@ -6,7 +6,7 @@ import CandidateDashboard from "@/components/candidate/CandidateDashboard";
 export const metadata = { title: "Candidate dashboard · TalentMatch" };
 
 export default function CandidatePage() {
-  return <Suspense fallback={<main className="mx-auto w-full max-w-5xl p-6 text-sm text-zinc-500">Loading candidate dashboard…</main>}><CandidatePageContent /></Suspense>;
+  return <Suspense fallback={<main className="mx-auto w-full max-w-6xl px-4 py-8 text-sm sm:px-6 lg:px-8 text-slate-500">Loading candidate dashboard…</main>}><CandidatePageContent /></Suspense>;
 }
 
 async function CandidatePageContent() {

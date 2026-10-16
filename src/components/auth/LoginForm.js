@@ -52,9 +52,9 @@ export default function LoginForm() {
                value={password} onChange={setPassword} error={fieldErrors.password} disabled={loading} />
         <SubmitButton loading={loading} loadingText="Signing in…">Sign in</SubmitButton>
       </form>
-      <p className="mt-6 text-center text-sm text-zinc-600 dark:text-zinc-400">
+      <p className="mt-6 text-center text-sm text-slate-600">
         New candidate?{" "}
-        <Link href="/register" className="font-medium text-zinc-900 underline dark:text-zinc-100">
+        <Link href="/register" className="font-medium text-indigo-600 hover:text-indigo-700 hover:underline">
           Create an account
         </Link>
       </p>
