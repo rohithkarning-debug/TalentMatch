@@ -24,6 +24,10 @@ let meera, kavya, arjun, meeraId, arjunId, job, arjunJob;
 const cand = {}; // tag -> { id, cookie, resumeId, applicationId }
 
 const inHours = (h) => new Date(Date.now() + h * 3600_000).toISOString();
+const inSeconds = (s) => new Date(Date.now() + s * 1000).toISOString();
+// Interviews can only be completed once their time has passed (migration
+// 021), so a test schedules one a few seconds ahead and waits for it.
+const waitUntilPassed = (iso) => new Promise((r) => setTimeout(r, Math.max(0, new Date(iso).getTime() - Date.now() + 500)));
 const addDays = (n) => {
   const d = new Date(`${todayInIndia()}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
@@ -187,17 +191,48 @@ describe("interviews", () => {
     assert.equal(types.filter((t) => t === "interview_updated").length, 2);
   });
 
-  it("mark completed with rating and feedback", async () => {
+  // Stage 9 regression (migration 021): completing a future interview used to pass.
+  it("a future interview cannot be marked completed (409 from trg_interviews_guard); once its time has passed it can", async () => {
     const { rows: [round1] } = await db.query("SELECT interview_id::int AS id FROM interviews WHERE application_id = $1 AND round_no = 1", [cand.main.applicationId]);
-    const res = await api(`/api/recruiter/interviews/${round1.id}`, { method: "PATCH", cookie: meera,
+    const early = await api(`/api/recruiter/interviews/${round1.id}`, { method: "PATCH", cookie: meera,
+      json: { action: "complete", rating: 5, feedback: "Too early" } });
+    assert.equal(early.status, 409, early.text);
+    assert.equal(early.body.error.code, "RULE_VIOLATION");
+    assert.match(early.body.error.message, /cannot be marked completed before its scheduled time/);
+    const { rows: [still] } = await db.query("SELECT status, rating, feedback FROM interviews WHERE interview_id = $1", [round1.id]);
+    assert.deepEqual(still, { status: "scheduled", rating: null, feedback: null });
+
+    const soon = inSeconds(3);
+    const scheduled = await api(`/api/recruiter/applications/${cand.main.applicationId}/interviews`, { method: "POST", cookie: meera,
+      json: { scheduledAt: soon, mode: "phone" } });
+    assert.equal(scheduled.status, 201, scheduled.text);
+    await waitUntilPassed(soon);
+    const res = await api(`/api/recruiter/interviews/${scheduled.body.interview.id}`, { method: "PATCH", cookie: meera,
       json: { action: "complete", rating: 5, feedback: "Strong SQL and pipeline design." } });
     assert.equal(res.status, 200, res.text);
     assert.deepEqual([res.body.interview.status, res.body.interview.rating], ["completed", 5]);
   });
 
+  it("the database refuses a future 'completed' / 'no_show' and 'move into the past + complete' in one UPDATE, even without the API", async () => {
+    const { rows: [round1] } = await db.query("SELECT interview_id::int AS id FROM interviews WHERE application_id = $1 AND round_no = 1", [cand.main.applicationId]);
+    for (const status of ["completed", "no_show"]) {
+      await assert.rejects(db.query("UPDATE interviews SET status = $2 WHERE interview_id = $1", [round1.id, status]),
+        (err) => err.code === "23514" && !err.constraint && new RegExp(`cannot be marked ${status} before its scheduled time`).test(err.message));
+    }
+    await assert.rejects(db.query(
+      "UPDATE interviews SET scheduled_at = now() - interval '1 hour', status = 'completed', rating = 4 WHERE interview_id = $1", [round1.id]),
+      (err) => /cannot be rescheduled and marked completed in the same change/.test(err.message));
+    const { rows: [still] } = await db.query("SELECT status, rating FROM interviews WHERE interview_id = $1", [round1.id]);
+    assert.deepEqual(still, { status: "scheduled", rating: null });
+  });
+
   it("rating outside 1-5 is rejected by the API (400) and by the database CHECK", async () => {
-    await api(`/api/recruiter/applications/${cand.rollback.applicationId}/interviews`, { method: "POST", cookie: meera, json: videoInterview(30) })
-      .then((r) => assert.equal(r.status, 201, r.text));
+    // Scheduled a few seconds ahead so that, once that time passes, the
+    // completion rule is satisfied and only the rating CHECK can fail.
+    const soon = inSeconds(3);
+    await api(`/api/recruiter/applications/${cand.rollback.applicationId}/interviews`, { method: "POST", cookie: meera,
+      json: { scheduledAt: soon, mode: "phone" } }).then((r) => assert.equal(r.status, 201, r.text));
+    await waitUntilPassed(soon);
     const { rows: [iv] } = await db.query("SELECT interview_id::int AS id FROM interviews WHERE application_id = $1", [cand.rollback.applicationId]);
     for (const rating of [0, 6]) {
       const res = await api(`/api/recruiter/interviews/${iv.id}`, { method: "PATCH", cookie: meera, json: { action: "complete", rating, feedback: "x" } });
