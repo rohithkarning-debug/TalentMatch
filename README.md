@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 6 is done. That covers the recruiter module (job create/edit/status/delete scoped to the recruiter's company, ranked applicants, search all candidates, and a status pipeline through `update_application_status()`), and applications (an apply transaction with a real pgvector match score, My Applications with a status history timeline, and a skill-gap view). Interviews, offers, notifications UI and the admin dashboard come next.
+> Status: Stage 7 is done. That covers interviews (schedule, reschedule, cancel, complete with a 1–5 rating; the first interview moves the application to `interviewed` in the same transaction), offers (a make-offer transaction, accept/decline before expiry, withdraw), and a notifications inbox for every role. Every rule is enforced in the database too (guard triggers and a deferred constraint trigger, migrations 018–019). Stages 1–6 cover the schema, triggers/functions/views, auth, the candidate module, pgvector matching, and the recruiter module with applications. The admin dashboard comes next.
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ Login uses an httpOnly session cookie that holds a signed JWT. Every API route c
 ```powershell
 npm run test:unit          # unit tests (no server/DB needed; embedding tests use the cached model)
 npm run build              # integration tests use the production build
-npm run test:integration   # starts the app (ports 3100-3103) and tests the real API + DB + model
+npm run test:integration   # starts the app (ports 3100-3104) and tests the real API + DB + model
 ```
 
 ## Semantic matching
@@ -85,6 +85,23 @@ Pages: recruiter `/recruiter` (My Jobs), `/recruiter/jobs/new`, `/recruiter/jobs
 | `GET /api/skills` | Skill catalogue (any signed-in user) |
 
 `applications.match_score` = `compute_match_score(resume, job)` = `1 - (resume <=> job)` for the resume chosen when applying, or NULL if either side is not embedded yet. `npm run db:embed` fills in such NULL scores later. Details: [advanced-features.md §7–8](docs/advanced-features.md).
+
+## Interviews, offers and notifications (Stage 7)
+
+Pages: recruiter `/recruiter/interviews`, `/recruiter/offers` ("Schedule interview" and "Make offer" are on each applicant in `/recruiter/jobs/:id`). Candidate: `/candidate/interviews`, `/candidate/offers`. Every role: `/notifications`.
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/recruiter/applications/:applicationId/interviews` | Schedule the next round (future time; link or location). The first one moves the application `shortlisted → interviewed` in the same transaction and notifies the candidate |
+| `GET /api/recruiter/interviews?scope=upcoming\|past\|all` | Interviews for the recruiter's company |
+| `PATCH /api/recruiter/interviews/:interviewId` | `{ action: "reschedule" \| "cancel" \| "complete" }`; only scheduled interviews change (409 otherwise); rating 1–5 |
+| `POST /api/recruiter/applications/:applicationId/offer` | **Transaction:** status → `offered` (only from `interviewed`) + offer row + notification; 409 if an offer exists or the transition is invalid |
+| `GET /api/recruiter/offers` · `POST /api/recruiter/offers/:offerId/withdraw` | Company offers / withdraw a pending offer (application → `rejected`) |
+| `GET /api/candidate/interviews` · `GET /api/candidate/offers` | Own interviews (no internal rating/feedback) / own offers |
+| `POST /api/candidate/offers/:offerId/respond` | `{ decision: "accept" \| "decline" }` before expiry; notifies the recruiters; someone else's offer → 404 |
+| `GET /api/notifications` · `PATCH /api/notifications/:id` · `POST /api/notifications/read-all` | Own inbox with unread count / mark read (others' → 404) / mark all read |
+
+Details and the transaction diagrams: [advanced-features.md §9–11](docs/advanced-features.md). Queries Q27–Q32 in `db/queries/important_queries.sql`.
 
 ## Database scripts
 
