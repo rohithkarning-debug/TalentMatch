@@ -146,3 +146,66 @@ Test accounts (`authtest.<run>.<n>@test.example`) were deleted afterwards: 0 lef
 | `npm run build` | Passes; all `/api/*` routes dynamic (ƒ), `/login` and `/register` static, `/` partially prerendered |
 | `GET /api/health` | HTTP 200, PostgreSQL 17.11, pgvector 0.8.7 |
 | Page smoke test | `/` signed out shows the Sign in / Create account links; `/login` 2 inputs, `/register` 4 inputs, no role field; `/` with Meera's cookie shows "Signed in as … Meera Iyer" and Sign out; no hash in the HTML |
+
+## Stage 4 — Candidate module (profile, skills, resumes, job browsing)
+
+Tests live in `tests/integration/candidate.test.js` and run against the production build (`next start` on port 3101) and the seeded database. `tests/fixtures/sample-resume.pdf` is a real PDF printed by a browser from `sample-resume.html` (embedded fonts, compressed streams; fictional person).
+```powershell
+npm run build
+npm run test:integration
+```
+Results recorded on 2026-10-16: **41 pass, 0 fail** for the whole integration suite (24 Stage 3 auth tests + 17 candidate tests). Unit tests: 20 pass, 0 fail.
+
+### Integration tests (`tests/integration/candidate.test.js`): 17 pass, 0 fail
+| # | Test | Expected | Actual | Result |
+|---|---|---|---|---|
+| C1 | Candidate endpoints anonymous / as recruiter | 401 / 403 | 401; 403 on profile, skills, resumes | Pass |
+| C2 | Read and update own profile; body with `role: admin` | 200 with saved values; 400 | 200, name/location/experience saved; `role` rejected with 400 | Pass |
+| C3 | Save profile with optional fields `null` or `""` | 200, stored as NULL | 200; location and headline returned as `null` | Pass |
+| C4 | Add a catalogue skill, remove it; proficiency 8 | 201, 200; 400 | As expected; skill gone after delete | Pass |
+| C5 | Add a new skill, then post the same skill again | 201 `created: true`, then 200 `created: false` with new values | 201 → 200; proficiency 2 → 5, years 0.5 → 3 | Pass |
+| C6 | Delete another candidate's skill (Aditi's) | 404; her row kept | 404; row still in `candidate_skills` | Pass |
+| C7 | Upload a .txt resume; another candidate deletes it; owner deletes it | 201; 404 with row kept; 200 | As expected | Pass |
+| C8 | Upload the real PDF | 201, first resume is primary, text extracted | 201; `isPrimary: true`; `extracted_text` contains "Priya Natarajan" and "PostgreSQL" | Pass |
+| C9 | 5 MB + 1 byte file; `.docx`; `image/png` named `.pdf`; text named `.pdf`; `%PDF-` header with garbage | 413 `FILE_SIZE`; 415 `FILE_TYPE`; 415; 400 `INVALID_PDF`; 400 `INVALID_PDF` | All as expected; 0 resume rows saved for that account | Pass |
+| C10 | Set primary resume (`PATCH /api/candidate/resumes/:id`) | 200; exactly one primary | 200; only the new resume has `is_primary` | Pass |
+| C10b | Same PATCH again / by another candidate / `isPrimary: false` / extra key / id `abc` | 200 / 404 / 400 / 400 / 404 | As expected; primary unchanged | Pass |
+| C10c | Delete the primary resume | Newest remaining resume becomes primary | Promoted | Pass |
+| C11 | 5 rounds × 8 parallel first uploads for a new candidate | All 201; exactly 1 primary of 8 | All 201; `{primaries: 1, total: 8}` every round | Pass |
+| J1 | `/api/candidate/jobs` anonymous / recruiter / admin | 401 / 403 / 403 | As expected | Pass |
+| J2 | No filters | Exactly the open jobs; no draft/closed job | The 6 open jobs; job 4 (draft) and 7 (closed) absent | Pass |
+| J3 | Keyword `devops`, `python` (skill), no-match, `%`, `' OR 1=1 --` | Matches in title/description/company/skill; 0; 0; 0 | As expected (wildcards and SQL text treated as plain text) | Pass |
+| J4 | `location=pune`, `employmentType=internship`, `experience=1.5`, all combined, all empty | Same ids as the equivalent SQL filter on open jobs; empty = no filter | Ids match exactly in every case | Pass |
+| J5 | `employmentType=permanent`, `experience=-1`, `experience=abc`, `status=draft`, 101-char keyword | 400 | 400 for all five | Pass |
+| J6 | `hasApplied` for Aditi | True exactly for her applications to open jobs | Matches `applications` table | Pass |
+
+Test accounts (`candidate.module.<run>…@test.example`) and their uploaded files are deleted afterwards: 0 leftover test users, 0 files in `uploads/resumes`, 17 users as seeded.
+
+### Bugs found and fixed in this stage (with evidence)
+| Bug | How it showed up | Fix | Evidence after the fix |
+|---|---|---|---|
+| Every PDF upload failed in the production build | Real PDF → 400 `RESUME_PARSE_FAILED`. Hidden causes: (1) bundled pdfjs could not find `.next/server/chunks/pdf.worker.mjs`; (2) `pdf.destroy()` does not exist in pdfjs 6 | `serverExternalPackages: ["pdfjs-dist"]`; clean up with `loadingTask.destroy()`; specific 400s for damaged / password-protected / image-only PDFs, logged 500 otherwise | C8 passes; each cause was confirmed separately by rebuilding with only the other fix |
+| Two parallel first uploads could both become primary | Unique index `resumes_one_primary_per_candidate` rejected all but one: 409 `CONFLICT` | Lock the candidate row with `SELECT … FOR NO KEY UPDATE` at the start of the upload/delete/set-primary transaction | **Negative control:** with the lock removed and the app rebuilt, C11 failed in round 2 (7 of 8 uploads got 409). With the lock: passes |
+| Saving a profile with an empty optional field crashed the page | `null.trim()` in `saveProfile`; the Save button stayed disabled | `(value ?? "").trim()`; `setBusy(false)` in `finally` | Manual check below |
+| Form not reset after a resume upload | `e.currentTarget` is `null` after `await` | Keep the form element in a variable first | Manual check below |
+| Re-adding an existing skill returned 201 | Upsert always answered "created" | `RETURNING (xmax = 0) AS inserted` → 201 or 200 | C5 |
+
+### Manual UI check (real browser)
+Headless Chrome driven over the DevTools protocol against `next start`, logged in as seeded candidate `divya.krishnan@mail.example`. Her profile and resumes were restored afterwards.
+| Step | Result |
+|---|---|
+| Log in | Home page shows "Signed in as Divya Krishnan · Candidate" and the dashboard link |
+| Clear phone, location, headline, education → Save | "Profile saved successfully."; Save button enabled again; database columns are NULL |
+| Upload `sample-resume.pdf` | "Resume uploaded successfully."; file input cleared; listed with size 51.1 KB; 581 characters extracted |
+| Set as primary | "Primary resume updated."; only `sample-resume.pdf` has the Primary badge; database agrees |
+| Browse jobs | 6 open jobs |
+| Keyword `python` → + Bengaluru → + Internship | 3 → 3 → 1 (NLP Research Intern) |
+| Experience 1.5 only | 3 (NLP Research Intern, Frontend Developer, Data Analyst) |
+| Keyword with no match | 0 and "No open jobs match these filters." |
+| Browser console | No errors or exceptions |
+
+### Other Stage 4 checks
+| Check | Result |
+|---|---|
+| `npm run build` | Passes; `/api/candidate/jobs` dynamic (ƒ), `/candidate/jobs` partially prerendered. One Turbopack warning ("Dynamic filesystem access causes tracing of the whole project") also appears in builds without this stage's config change |
+| `important_queries.sql` (now 19 queries, Q17–Q19 added for the candidate module) | Whole file runs with exit code 0 |
