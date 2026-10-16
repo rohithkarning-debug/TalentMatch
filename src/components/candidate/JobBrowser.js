@@ -77,7 +77,7 @@ export default function JobBrowser() {
               </div>
               {job.hasApplied && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200">Applied</span>}
             </div>
-            <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears} + years experience · {formatSalary(job)}{job.closesAt && ` · closes ${new Date(job.closesAt).toLocaleDateString()}`}</p>
+            <p className="mt-2 text-sm text-zinc-700 dark:text-zinc-300">{EMPLOYMENT_LABELS[job.employmentType]} · {job.minExperienceYears}+ years experience · {formatSalary(job)}{job.closesAt && ` · closes ${new Date(job.closesAt).toLocaleDateString()}`}</p>
             <p className="mt-3 line-clamp-3 text-sm text-zinc-600 dark:text-zinc-400">{job.description}</p>
             {job.skills.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{job.skills.map((s) => <span key={s} className="rounded-full bg-zinc-100 px-2 py-0.5 text-xs text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">{s}</span>)}</div>}
           </article>)}
