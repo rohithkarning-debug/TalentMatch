@@ -10,7 +10,8 @@
 | Authorization | Server-side guards in every route handler | `src/lib/auth/guards.js` |
 | Validation | `zod` schemas shared by API and forms, plus DB CHECK/UNIQUE constraints | `src/lib/validation/auth.js` |
 | Errors | One JSON format `{ error: { code, message, details? } }` | `src/lib/api/errors.js` |
-| CSRF defence | `SameSite=Lax` cookie + Origin check + JSON-only bodies | `src/lib/api/request.js` |
+| CSRF defence | `SameSite=Lax` cookie + Origin / `Sec-Fetch-Site` check + JSON-only bodies | `src/lib/api/request.js` |
+| Security headers (Stage 9) | `nosniff`, `X-Frame-Options: DENY`, CSP `frame-ancestors 'none'`, Referrer-Policy, Permissions-Policy; no `X-Powered-By` | `next.config.mjs` |
 
 Roles: `admin`, `recruiter`, `candidate` (the `users.role` CHECK constraint from migration 002).
 
@@ -69,7 +70,7 @@ Tokens are **never** stored in `localStorage` or `sessionStorage`. The forms onl
 **Logout** overwrites the cookie with an empty value and `Max-Age=0`, using the same name, path and flags.
 
 **Extra CSRF layers:**
-- `assertSameOrigin()` rejects state-changing requests whose `Origin` header is a different site (403 `CROSS_ORIGIN`).
+- `assertSameOrigin()` rejects state-changing requests whose `Origin` header is a different site (403 `CROSS_ORIGIN`). Since Stage 9 it also rejects `Sec-Fetch-Site: cross-site` or `same-site` even when `Origin` is missing. Browsers set that header themselves and a web page cannot change it. Requests with neither header (curl, the tests) are not from a browser, so CSRF does not apply to them.
 - Login and register accept only `Content-Type: application/json` (415 otherwise). An HTML form on another site cannot send JSON.
 
 ## 5. Authorization helpers (`src/lib/auth/guards.js`)
@@ -81,34 +82,38 @@ Tokens are **never** stored in `localStorage` or `sessionStorage`. The forms onl
 | `requireUser(request)` | Returns the user or throws 401 |
 | `requireRole(request, ...roles)` / `requireAdmin` / `requireRecruiter` / `requireCandidate` | 401/403 |
 | `assertRole(user, roles)` | 403 if the role is not allowed |
-| `assertOwner(user, ownerUserId)` | 403 unless the record belongs to the user |
-| `assertOwnerOrAdmin(user, ownerUserId)` | Same, but admins pass |
 | `getCurrentUser()` (`session.js`) | For Server Components (reads `cookies()`). Must be inside `<Suspense>` because Cache Components is on |
 
-**Pattern for every protected route in later stages:**
+**Ownership is enforced in SQL.** The owner is part of the WHERE clause, and the owner id is the session user, never a value from the request. Another user's record matches 0 rows, so the answer is the same 404 as for a record that does not exist, and its existence is not revealed:
 ```js
-export const GET = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { user, params }) => {
-  const id = idParamSchema.parse(params.id);                         // 1. validate input
-  const { rows } = await query("SELECT candidate_id, ... FROM applications WHERE application_id = $1", [id]);
-  if (!rows[0]) throw notFound();                                    // 2. load record
-  assertOwner(user, rows[0].candidate_id);                           // 3. owner comes from the DB, never the request
-  return NextResponse.json(...);
+export const DELETE = withAuth({ roles: [ROLES.CANDIDATE] }, async (request, { user, params }) => {
+  const id = idParamSchema.safeParse(params.resumeId);                 // 1. validate input
+  if (!id.success) throw notFound("Resume not found");
+  const found = await query(
+    "SELECT storage_path FROM resumes WHERE resume_id = $1 AND candidate_id = $2",
+    [id.data, user.id]);                                               // 2. owner = session user, in SQL
+  if (!found.rowCount) throw notFound("Resume not found");             // 3. someone else's resume -> 404
+  ...
 });
 ```
+Company-scoped recruiter records are different: `assertJobInRecruiterCompany` / `assertApplicationInRecruiterCompany` (`src/lib/recruiter/jobs.js`) load the record's company and the recruiter's company from the database and compare them. A missing record is 404; another company's record is **403**.
+
+(Stage 3 had two helpers, `assertOwner` and `assertOwnerOrAdmin`, used only by the demonstration routes. They were removed in Stage 9 together with those routes.)
 
 The UI may hide buttons for convenience, but that is never the protection: every route checks on the server. No `proxy.js` (formerly middleware) is used, so authorization never depends on one.
 
-### Role permission matrix (Stage 3 endpoints)
+### Role permission matrix
 
 | Endpoint | Anonymous | Candidate | Recruiter | Admin |
 |---|---|---|---|---|
 | `POST /api/auth/register` | ✅ (creates candidate only) | ✅ | ✅ | ✅ |
 | `POST /api/auth/login` / `logout` | ✅ | ✅ | ✅ | ✅ |
 | `GET /api/auth/me` | 401 | ✅ | ✅ | ✅ |
-| `GET /api/demo/admin` | 401 | 403 | 403 | ✅ |
-| `GET /api/demo/recruiter` | 401 | 403 | ✅ | 403 |
-| `GET /api/demo/candidate` | 401 | ✅ | 403 | 403 |
-| `GET /api/demo/users/:id` | 401 | own id only | own id only | any id |
+| `/api/admin/*` (e.g. `GET /api/admin/dashboard`) | 401 | 403 | 403 | ✅ |
+| `/api/recruiter/*` (e.g. `GET /api/recruiter/jobs`) | 401 | 403 | ✅ (own company only) | 403 |
+| `/api/candidate/*` (e.g. `GET /api/candidate/profile`) | 401 | ✅ (own records only) | 403 | 403 |
+
+Stage 3 tested the guards with four demonstration routes under `/api/demo/*`. They were removed in Stage 9; the same 401/403 checks now run against the three example routes above (`tests/integration/auth.test.js`, "server-side role guards"). Every route is listed in [security-review.md](security-review.md).
 
 Admin and recruiter accounts are **never** created through public registration. The register schema is strict, so any `role` field is rejected with 400 and nothing is saved, and the SQL hard-codes `'candidate'`. Admin-managed recruiter creation comes in a later stage.
 
@@ -137,7 +142,7 @@ Creates `users` (role `candidate`) and `candidates` in **one transaction**, then
 |---|---|
 | 201 | `{ "user": { "id", "email", "fullName", "role": "candidate" } }` + Set-Cookie |
 | 400 `VALIDATION_ERROR` | Invalid fields, extra fields (e.g. `role`), malformed JSON |
-| 403 `CROSS_ORIGIN` | Origin header from another site |
+| 403 `CROSS_ORIGIN` | Origin header from another site, or `Sec-Fetch-Site: cross-site` / `same-site` |
 | 409 `EMAIL_TAKEN` | Email already registered (any letter case) |
 | 413 / 415 | Body > 16 KB / not `application/json` |
 
@@ -152,6 +157,7 @@ curl -i -X POST http://localhost:3000/api/auth/login -H "Content-Type: applicati
 | 400 | Missing or invalid fields |
 | 401 `INVALID_CREDENTIALS` | Wrong password **or** unknown email (identical response) |
 | 403 `ACCOUNT_DISABLED` | Correct password but `is_active = false` |
+| 429 `TOO_MANY_ATTEMPTS` | 5 attempts for this email from this IP in the last 15 minutes without a successful login. `Retry-After` header in seconds; message "Too many failed login attempts. Try again in N minutes." Same answer for unknown emails |
 
 ### `POST /api/auth/logout`
 Always 200 `{ "ok": true }`, and clears the cookie (`Max-Age=0`).
@@ -161,9 +167,6 @@ Always 200 `{ "ok": true }`, and clears the cookie (`Max-Age=0`).
 curl -i http://localhost:3000/api/auth/me -b "tm_session=<token>"
 ```
 200 `{ "user": { "id", "email", "fullName", "role" } }`, or 401 `UNAUTHORIZED` when there is no session or it is invalid, expired, disabled, or its role is stale.
-
-### Demo endpoints (Stage 3 only)
-`/api/demo/admin`, `/api/demo/recruiter`, `/api/demo/candidate`, `/api/demo/users/:id`. They return only the caller's safe profile, or for `users/:id` the requested safe profile. They exist to demonstrate and test the guards, and can be removed once the real modules exist.
 
 ## 7. Frontend
 
@@ -201,6 +204,10 @@ Results are recorded in [test-cases.md](test-cases.md#stage-3--authentication-an
 ## 10. Limitations (known, acceptable for this project)
 
 - **Stateless JWT.** Logout clears the browser cookie, but a token copied before logout stays valid until it expires (max 8 h). Disabling the account or changing its role invalidates it immediately (DB check). A server-side revocation list (`jti` deny-list) would be the next step.
-- **No rate limiting or lockout** on login. bcrypt cost 12 slows guessing but does not stop it. A production deployment would add per-IP and per-account limits.
+- **Login rate limiting is in memory** (Stage 9, `src/lib/auth/login-rate-limit.js`): 5 attempts per email + IP per 15 minutes, counted before the password check so parallel requests cannot slip past, reset by a successful login, 429 with `Retry-After`. The counters live in one server process (lost on restart, not shared by several servers; a real deployment would keep them in Redis or the database). The IP comes from `X-Forwarded-For`: Next.js fills it with the socket address only when the client sent none, so without a trusted proxy in front a client can choose its own "IP" and get a fresh count. See [security-review.md §5](security-review.md#5-known-limitations-not-fixed).
 - **Registration reveals that an email exists** (409 `EMAIL_TAKEN`). This is the usual sign-up trade-off; login itself does not reveal it.
 - **No email verification or password reset** in this project's scope.
+- **No `script-src` Content-Security-Policy** (Stage 9). The CSP only sets `frame-ancestors`, `base-uri`, `object-src` and `form-action`. Restricting scripts needs a fresh nonce per request, which forces every page to render dynamically and conflicts with Cache Components / partial prerendering. React escapes all output, which is the main XSS defence here.
+- **No HSTS header.** It only means something over HTTPS and belongs to the HTTPS proxy of a real deployment; on `http://localhost` browsers ignore it.
+
+The full Stage 9 route-by-route review is in [security-review.md](security-review.md).

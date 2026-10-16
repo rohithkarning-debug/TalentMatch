@@ -235,7 +235,7 @@ describe("GET /api/auth/me and JWT validation", () => {
     const { user } = await login(SEEDED.candidate);
     const forgedAdmin = await signToken({ sub: user.id, role: "admin" }); // validly signed, wrong role
     assert.equal((await api("/api/auth/me", { cookie: forgedAdmin })).status, 401);
-    assert.equal((await api("/api/demo/admin", { cookie: forgedAdmin })).status, 401);
+    assert.equal((await api("/api/admin/dashboard", { cookie: forgedAdmin })).status, 401);
     const ghost = await signToken({ sub: 987654321, role: "candidate" }); // user does not exist
     assert.equal((await api("/api/auth/me", { cookie: ghost })).status, 401);
   });
@@ -260,41 +260,39 @@ describe("POST /api/auth/logout", () => {
   });
 });
 
-describe("server-side role guards (demo routes)", () => {
-  const routes = ["admin", "recruiter", "candidate"];
+// Role guards on real routes (the Stage 3 /api/demo/* routes were removed in
+// Stage 9). One read-only route per role: each role gets 200 on its own and
+// 403 FORBIDDEN on the other two; no session gets 401. Ownership checks are
+// tested with the records they protect (candidate, recruiter and pipeline
+// tests: other users' skills, resumes, jobs, offers and notifications).
+describe("server-side role guards", () => {
+  const ROLE_ROUTES = {
+    admin: "/api/admin/dashboard",
+    recruiter: "/api/recruiter/jobs",
+    candidate: "/api/candidate/profile",
+  };
 
   it("reject unauthenticated requests (401)", async () => {
-    for (const r of routes) assert.equal((await api(`/api/demo/${r}`)).status, 401, r);
+    for (const route of Object.values(ROLE_ROUTES)) assert.equal((await api(route)).status, 401, route);
+  });
+
+  it("the removed Stage 3 demo routes no longer exist (404)", async () => {
+    const { cookie } = await login(SEEDED.admin);
+    for (const route of ["/api/demo/admin", "/api/demo/recruiter", "/api/demo/candidate", "/api/demo/users/1"]) {
+      assert.equal((await api(route, { cookie })).status, 404, route);
+    }
   });
 
   for (const [role, email] of Object.entries(SEEDED)) {
-    it(`${role}: 200 on /api/demo/${role}, 403 on the other two`, async () => {
+    it(`${role}: 200 on ${ROLE_ROUTES[role]}, 403 on the other two`, async () => {
       const { cookie } = await login(email);
-      for (const r of routes) {
-        const res = await api(`/api/demo/${r}`, { cookie });
-        assert.equal(res.status, r === role ? 200 : 403, `${role} -> ${r}`);
-        if (r !== role) assert.equal(res.body.error.code, "FORBIDDEN");
+      for (const [routeRole, route] of Object.entries(ROLE_ROUTES)) {
+        const res = await api(route, { cookie });
+        assert.equal(res.status, routeRole === role ? 200 : 403, `${role} -> ${route}`);
+        if (routeRole !== role) assert.equal(res.body.error.code, "FORBIDDEN");
       }
     });
   }
-});
-
-describe("ownership checks (GET /api/demo/users/:id)", () => {
-  it("own record 200, someone else's 403, admin any 200 / missing 404, bad id 400, anonymous 401", async () => {
-    const cand = await login(SEEDED.candidate);
-    const rec = await login(SEEDED.recruiter);
-    const admin = await login(SEEDED.admin);
-
-    assert.equal((await api(`/api/demo/users/${cand.user.id}`, { cookie: cand.cookie })).status, 200);
-    assert.equal((await api(`/api/demo/users/${rec.user.id}`, { cookie: cand.cookie })).status, 403);
-    assert.equal((await api(`/api/demo/users/${cand.user.id}`, { cookie: rec.cookie })).status, 403);
-    const asAdmin = await api(`/api/demo/users/${cand.user.id}`, { cookie: admin.cookie });
-    assert.equal(asAdmin.status, 200);
-    assert.deepEqual(Object.keys(asAdmin.body.user).sort(), SAFE_USER_KEYS);
-    assert.equal((await api("/api/demo/users/987654321", { cookie: admin.cookie })).status, 404);
-    assert.equal((await api("/api/demo/users/abc", { cookie: admin.cookie })).status, 400);
-    assert.equal((await api(`/api/demo/users/${cand.user.id}`)).status, 401);
-  });
 });
 
 describe("secrets are never exposed", () => {

@@ -6,7 +6,7 @@ AI-Assisted Resume-to-Job Matching and Recruitment Management System. This is a 
 
 **Stack:** Next.js (App Router, JavaScript) · Tailwind CSS · PostgreSQL 17 + pgvector (Docker) · raw SQL via `pg`
 
-> Status: Stage 8 is done. It adds the admin module: company management (deleting a company that still has recruiters or jobs is refused by the database's `ON DELETE RESTRICT` keys and shown as a clear message), recruiter accounts created in one users + recruiters transaction, activation/deactivation that also ends existing sessions, and an analytics dashboard built on the Stage 2 views and `generate_hiring_pipeline_report()`. Every page now shares one layout: a top nav with role links, a notification bell and a user menu, plus the same cards, status colours, empty states and loading skeletons. Stages 1–7 cover the schema, triggers/functions/views, auth, the candidate module, pgvector matching, the recruiter module, and interviews, offers and notifications.
+> Status: Stage 9 is done: a security review of every API route ([docs/security-review.md](docs/security-review.md)), security headers, a stricter CSRF check, two data-consistency rules enforced by the database (rejecting an application withdraws its pending offer; an interview cannot be completed before its time), demo data with an accepted and a declined offer, and one final test table ([docs/test-cases.md](docs/test-cases.md)). Stages 1–8 cover the schema, triggers/functions/views, auth, the candidate module, pgvector matching, the recruiter module, interviews/offers/notifications, and the admin module with its dashboard.
 
 ## Prerequisites
 
@@ -36,12 +36,25 @@ npm run db:seed
 #    the ~90 MB MiniLM model into .cache/transformers; needs internet once)
 npm run db:embed
 
-# 6. Start the app
+# 6. Start the app (development mode, reloads on save)
 npm run dev
+
+#    ...or the production build, as used by the integration tests
+npm run build
+npm start
 ```
 
-Open http://localhost:3000/api/health. You should see `"status":"ok"`, the PostgreSQL version, and the pgvector version.
+Open http://localhost:3000/api/health. You should see `"status":"ok"`, the PostgreSQL version number, and the pgvector version.
 Then open http://localhost:3000 and sign in with a demo account below, or create a candidate account at `/register`.
+
+**Starting over with a clean database** (destructive; only works on the local Docker database):
+
+```powershell
+npm run db:reset -- --yes
+npm run db:migrate
+npm run db:seed
+npm run db:embed
+```
 
 ## Authentication
 
@@ -56,10 +69,12 @@ Login uses an httpOnly session cookie that holds a signed JWT. Every API route c
 
 ## Tests
 
+Integration tests need the database migrated, seeded and embedded (setup steps 4–5). They create their own `@test.example` accounts and delete them afterwards.
+
 ```powershell
 npm run test:unit          # unit tests (no server/DB needed; embedding tests use the cached model)
 npm run build              # integration tests use the production build
-npm run test:integration   # starts the app (ports 3100-3104) and tests the real API + DB + model
+npm run test:integration   # starts the app (ports 3100-3105) and tests the real API + DB + model
 ```
 
 ## Semantic matching
@@ -154,10 +169,10 @@ All demo accounts use the password **`TalentMatch@2026`**. Only its bcrypt hash 
 | Candidate | karthik.subramanian@mail.example | Backend (Java) |
 | Candidate | ishita.banerjee@mail.example | Data analyst |
 | Candidate | farhan.qureshi@mail.example | Data analyst |
-| Candidate | neha.bhatt@mail.example | DevOps |
+| Candidate | neha.bhatt@mail.example | DevOps (accepted the SRE offer) |
 | Candidate | siddharth.pillai@mail.example | SRE / DevOps |
 | Candidate | divya.krishnan@mail.example | Graduate ML / NLP |
-| Candidate | aman.malhotra@mail.example | Full stack |
+| Candidate | aman.malhotra@mail.example | Full stack (declined the Backend offer) |
 
 ## Documentation
 
@@ -167,6 +182,7 @@ All demo accounts use the password **`TalentMatch@2026`**. Only its bcrypt hash 
 - [Advanced SQL features](docs/advanced-features.md): triggers, functions, views, queries, transactions
 - [Vector design](docs/vector-design.md): embeddings, chunking, HNSW, cosine ranking
 - [Authentication and RBAC](docs/authentication.md)
+- [Security review](docs/security-review.md): every API route's checks, headers, secrets audit
 - [Test cases and results](docs/test-cases.md)
 
 ## Notes
