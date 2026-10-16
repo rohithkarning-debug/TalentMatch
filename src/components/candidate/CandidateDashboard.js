@@ -92,12 +92,14 @@ export default function CandidateDashboard() {
 
   async function uploadResume(e) {
     e.preventDefault(); if (!selectedFile) return;
+    // React clears e.currentTarget once the handler yields, so keep the form now.
+    const formElement = e.currentTarget;
     setBusy(true); setError(""); setNotice("");
     const form = new FormData(); form.append("file", selectedFile);
     const result = await request("/api/candidate/resumes", { method: "POST", body: form });
     setBusy(false);
     if (!result.ok) { setError(result.body?.error?.message || "Resume upload failed."); return; }
-    setSelectedFile(null); e.currentTarget.reset(); setNotice("Resume uploaded successfully."); await refresh();
+    setSelectedFile(null); formElement.reset(); setNotice("Resume uploaded successfully."); await refresh();
   }
 
   async function deleteResume(id) {
