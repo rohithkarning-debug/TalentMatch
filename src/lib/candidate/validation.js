@@ -24,3 +24,13 @@ export const candidateSkillSchema = z.strictObject({
 export const resumeUpdateSchema = z.strictObject({
   isPrimary: z.literal(true, "isPrimary must be true"),
 });
+
+// Query string of GET /api/candidate/jobs. Empty strings mean "no filter".
+const emptyToUndefined = (v) => (typeof v === "string" && v.trim() === "" ? undefined : v);
+export const EMPLOYMENT_TYPES = ["full_time", "part_time", "contract", "internship"];
+export const jobSearchSchema = z.strictObject({
+  q: z.preprocess(emptyToUndefined, z.string().trim().max(100).optional()),
+  location: z.preprocess(emptyToUndefined, z.string().trim().max(120).optional()),
+  employmentType: z.preprocess(emptyToUndefined, z.enum(EMPLOYMENT_TYPES).optional()),
+  experience: z.preprocess(emptyToUndefined, z.coerce.number().min(0).max(60).optional()),
+});
