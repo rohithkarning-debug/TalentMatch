@@ -111,9 +111,9 @@ export default function RecruiterManager() {
               <p className={`font-medium ${r.isActive ? "text-slate-900" : "text-slate-500"}`}>{r.fullName}</p>
               <p className="text-xs text-slate-500">{r.email}</p>
             </td>
-            <td className={tdClass}><p>{r.companyName}</p><p className="text-xs text-slate-500">{r.designation || "—"}</p></td>
-            <td className={`${tdClass} text-right tabular-nums`}>{r.jobCount}<span className="text-slate-400"> · {r.openJobCount} open</span></td>
-            <td className={`${tdClass} text-right tabular-nums`} title="Applications still applied, shortlisted or interviewed (recruiter_pipeline_view)">{r.activeInPipeline}</td>
+            <td className={`${tdClass} min-w-[11rem]`}><p>{r.companyName}</p><p className="text-xs text-slate-500">{r.designation || "—"}</p></td>
+            <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`}>{r.jobCount}<span className="text-slate-400"> · {r.openJobCount} open</span></td>
+            <td className={`${tdClass} whitespace-nowrap text-right tabular-nums`} title="Applications still applied, shortlisted or interviewed (recruiter_pipeline_view)">{r.activeInPipeline}</td>
             <td className={`${tdClass} whitespace-nowrap text-slate-600`}>{r.lastLoginAt ? formatDateTime(r.lastLoginAt) : "Never"}</td>
             <td className={tdClass}><StatusBadge status={r.isActive ? "active" : "inactive"} /></td>
             <td className={tdClass}>

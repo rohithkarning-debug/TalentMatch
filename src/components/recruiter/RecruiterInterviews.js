@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import {
-  Alert, buttonClass, cardClass, dangerClass, EmptyState, errorLines, formatDateTime, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, sectionTitleClass, SkeletonList, StatusBadge,
+  Alert, buttonClass, cardClass, dangerClass, EmptyState, errorLines, formatDateTime, inlineInputClass, inputClass, labelClass, PageHeader, PageShell, request, secondaryClass, sectionTitleClass, SkeletonList, StatusBadge,
 } from "@/components/ui";
 import { localInputToIso } from "@/components/recruiter/PipelineForms";
 
@@ -58,7 +58,7 @@ function InterviewCard({ iv, onChanged }) {
     </form>}
     {mode === "complete" && <form className="mt-3 space-y-2" onSubmit={(e) => { e.preventDefault(); send({ action: "complete", rating: Number(rating), feedback }); }}>
       <label className={labelClass}>Rating (1-5)
-        <select className={`${inputClass} w-24`} value={rating} onChange={(e) => setRating(e.target.value)}>{[1, 2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>
+        <select className={`${inlineInputClass} mt-1 block w-24`} value={rating} onChange={(e) => setRating(e.target.value)}>{[1, 2, 3, 4, 5].map((n) => <option key={n}>{n}</option>)}</select></label>
       <label className={labelClass}>Feedback (internal, not shown to the candidate)
         <textarea required className={inputClass} rows={3} maxLength={2000} value={feedback} onChange={(e) => setFeedback(e.target.value)} /></label>
       <div className="flex gap-2"><button className={buttonClass} disabled={busy}>Save</button><button type="button" className={secondaryClass} onClick={() => setMode(null)}>Back</button></div>

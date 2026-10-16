@@ -37,7 +37,7 @@ export default function RecruiterJobs() {
                 {job.postedBy && ` · posted by ${job.postedBy}`}
               </p>
             </div>
-            <div className="text-right">
+            <div className="flex items-baseline gap-1.5 sm:block sm:text-right">
               <p className="text-2xl font-semibold text-slate-900" title="jobs.applicant_count (trigger-maintained)">{job.applicantCount}</p>
               <p className={mutedLabelClass}>applicant{job.applicantCount === 1 ? "" : "s"}</p>
             </div>

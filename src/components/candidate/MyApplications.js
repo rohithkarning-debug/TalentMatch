@@ -33,7 +33,7 @@ export default function MyApplications() {
               {a.nextInterviewAt && <p className="mt-1 text-sm text-purple-700">Next interview: {formatDateTime(a.nextInterviewAt)}</p>}
               {a.offerStatus && <p className="mt-1 text-sm text-emerald-800">Offer: {a.offerStatus} · <Link href="/candidate/offers" className="underline">view offer</Link></p>}
             </div>
-            <div className="text-right">
+            <div className="flex items-baseline gap-1.5 sm:block sm:text-right">
               <p className="font-mono text-lg text-slate-900">{formatScore(a.matchScore)}</p>
               <p className={mutedLabelClass}>match score</p>
             </div>
