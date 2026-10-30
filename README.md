@@ -6,7 +6,25 @@
 
 TalentMatch is a recruitment system for companies that receive many resumes per opening. It ranks candidates by the **meaning** of their resume, not only by keywords: resumes and job descriptions are turned into 384-number embeddings, stored in PostgreSQL with **pgvector**, and compared with cosine similarity. Around that sits a full hiring pipeline (apply → shortlist → interview → offer → accept/decline, or reject) whose rules are enforced **inside the database** with constraints, triggers, functions, views and transactions.
 
-The complete project report (all 14 documentation sections required by the course) is [docs/project-report.md](docs/project-report.md).
+**Database option:** SQL + Vector Database (course requirements §3, Option 2): PostgreSQL for the relational data and pgvector as the vector store, in one database.
+
+| Document | What it covers |
+|---|---|
+| [Project report](docs/project-report.md) ([PDF](docs/TalentMatch_Project_Report.pdf)) | All 14 documentation sections required by the course |
+| [Course requirements, answered](docs/handout-requirements.md) | Every handout requirement (§1–§18) with where it is met in this repository |
+| [Hiring statistics report](docs/company-statistics.md) | TalentMatch treated as a company: funnel, speed, salaries, skills, recommendations |
+
+## Diagrams
+
+**Use case diagram** — who uses the system and what they can do:
+
+![TalentMatch use case diagram](docs/use-case-diagram.png)
+
+**ER diagram (Chen notation)** — 16 tables, cardinalities, weak entities and the pgvector tables:
+
+![TalentMatch ER diagram](docs/er-diagram-chen.png)
+
+The column-level crow's-foot diagram is in [docs/er-diagram.md](docs/er-diagram.md) ([image](docs/er-diagram.png)).
 
 ## Features by role
 
@@ -27,6 +45,23 @@ The complete project report (all 14 documentation sections required by the cours
 **Admin**
 - Dashboard: platform totals, applications per stage, top demanded skills, average match score by outcome, per-company table (offer acceptance rate, interview rating), per-job funnel.
 - Manage companies (deleting a company that still has recruiters or jobs is refused by the database) and recruiter accounts (create, edit, move, deactivate).
+
+## Hiring statistics (demo data)
+
+Computed from the seeded database; full report with charts in [docs/company-statistics.md](docs/company-statistics.md).
+
+| Metric | Value |
+|---|---|
+| Companies · recruiters · candidates | 3 · 4 · 12 |
+| Job postings · openings | 8 (6 open) · 14 |
+| Applications | 18 |
+| Hiring funnel | 18 applied → 9 shortlisted → 6 interviewed → 3 offered → 1 hired |
+| Shortlist rate · offer rate | 50% · 17% |
+| Offer acceptance (decided offers) | 50% (1 accepted, 1 declined, 1 pending) |
+| Slowest stage | Shortlisted → interviewed, 14.1 days on average |
+| Time to hire (completed hire) | 22.0 days |
+
+![Hiring funnel](docs/statistics/01-funnel.png)
 
 ## Tech stack
 
@@ -192,7 +227,16 @@ tests/
   unit/                 node:test unit tests
   integration/          node:test API + database tests
   fixtures/             sample resume files
-docs/                   project report, design docs, screenshots, viva demo script
+docs/
+  project-report.md     the 14-section project report (+ TalentMatch_Project_Report.pdf)
+  handout-requirements.md   course requirements §1–§18, answered with evidence
+  company-statistics.md     hiring statistics report (charts in statistics/)
+  use-case-diagram.png      UML use case diagram (+ .svg)
+  er-diagram-chen.png       ER diagram in Chen notation (+ .svg)
+  er-diagram.md / .png      column-level ER diagram (crow's foot)
+  screenshots/final/        34 application screenshots
+  reference/                course requirements handout and project synopsis
+  …                         design docs, test cases, security review, viva demo script
 docker-compose.yml      PostgreSQL 17 + pgvector container
 .env.example            variable names and placeholders only
 ```
@@ -213,9 +257,12 @@ Known limitations (in-memory rate limiter, stateless JWT, no `script-src` CSP): 
 
 ## Documentation
 
-- [Project report](docs/project-report.md) — all 14 required sections, team contribution
+- [Project report](docs/project-report.md) ([PDF](docs/TalentMatch_Project_Report.pdf)) — all 14 required sections, team contribution
+- [Course requirements, answered](docs/handout-requirements.md) — §1–§18 of the handout with evidence
+- [Hiring statistics report](docs/company-statistics.md) — TalentMatch as a company, with charts
+- [Use case diagram](docs/use-case-diagram.png) · [ER diagram, Chen notation](docs/er-diagram-chen.png)
 - [Viva demo script](docs/viva-demo-script.md) — 10-minute demo, live psql queries, 30 likely questions
-- [ER diagram](docs/er-diagram.md) ([image](docs/er-diagram.png))
+- [ER diagram, column level](docs/er-diagram.md) ([image](docs/er-diagram.png))
 - [Relational schema](docs/relational-schema.md) — tables, FK delete rules, indexes, normalisation
 - [Data dictionary](docs/data-dictionary.md)
 - [Advanced SQL features](docs/advanced-features.md) — triggers, functions, views, transactions
@@ -224,6 +271,7 @@ Known limitations (in-memory rate limiter, stateless JWT, no `script-src` CSP): 
 - [Security review](docs/security-review.md)
 - [Test cases and results](docs/test-cases.md)
 - [Screenshots](docs/screenshots/final/)
+- [Course requirements handout](docs/reference/)
 
 ## Notes
 
