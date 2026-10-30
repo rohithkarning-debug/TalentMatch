@@ -11,18 +11,18 @@ TalentMatch is a recruitment system for companies that receive many resumes per 
 | Document | What it covers |
 |---|---|
 | [Project report](docs/project-report.md) ([PDF](docs/TalentMatch_Project_Report.pdf)) | All 14 documentation sections required by the course |
-| [Course requirements, answered](docs/handout-requirements.md) | Every handout requirement (§1–§18) with where it is met in this repository |
-| [Hiring statistics report](docs/company-statistics.md) | TalentMatch treated as a company: funnel, speed, salaries, skills, recommendations |
+| [Course requirements, answered](new_changes/handout-requirements.md) | Every handout requirement (§1–§18) with where it is met in this repository |
+| [Hiring statistics report](new_changes/company-statistics.md) | TalentMatch treated as a company: funnel, speed, salaries, skills, recommendations |
 
 ## Diagrams
 
 **Use case diagram** — who uses the system and what they can do:
 
-![TalentMatch use case diagram](docs/use-case-diagram.png)
+![TalentMatch use case diagram](new_changes/use-case-diagram.png)
 
 **ER diagram (Chen notation)** — 16 tables, cardinalities, weak entities and the pgvector tables:
 
-![TalentMatch ER diagram](docs/er-diagram-chen.png)
+![TalentMatch ER diagram](new_changes/er-diagram-chen.png)
 
 The column-level crow's-foot diagram is in [docs/er-diagram.md](docs/er-diagram.md) ([image](docs/er-diagram.png)).
 
@@ -48,7 +48,7 @@ The column-level crow's-foot diagram is in [docs/er-diagram.md](docs/er-diagram.
 
 ## Hiring statistics (demo data)
 
-Computed from the seeded database; full report with charts in [docs/company-statistics.md](docs/company-statistics.md).
+Computed from the seeded database; full report with charts in [new_changes/company-statistics.md](new_changes/company-statistics.md).
 
 | Metric | Value |
 |---|---|
@@ -61,7 +61,7 @@ Computed from the seeded database; full report with charts in [docs/company-stat
 | Slowest stage | Shortlisted → interviewed, 14.1 days on average |
 | Time to hire (completed hire) | 22.0 days |
 
-![Hiring funnel](docs/statistics/01-funnel.png)
+![Hiring funnel](new_changes/statistics/01-funnel.png)
 
 ## Tech stack
 
@@ -227,16 +227,13 @@ tests/
   unit/                 node:test unit tests
   integration/          node:test API + database tests
   fixtures/             sample resume files
-docs/
-  project-report.md     the 14-section project report (+ TalentMatch_Project_Report.pdf)
+docs/                   project report (+ PDF), design docs, screenshots, viva demo script, course handout
+new_changes/
   handout-requirements.md   course requirements §1–§18, answered with evidence
-  company-statistics.md     hiring statistics report (charts in statistics/)
+  company-statistics.md     hiring statistics report
+  statistics/               charts used by the statistics report
   use-case-diagram.png      UML use case diagram (+ .svg)
   er-diagram-chen.png       ER diagram in Chen notation (+ .svg)
-  er-diagram.md / .png      column-level ER diagram (crow's foot)
-  screenshots/final/        34 application screenshots
-  reference/                course requirements handout and project synopsis
-  …                         design docs, test cases, security review, viva demo script
 docker-compose.yml      PostgreSQL 17 + pgvector container
 .env.example            variable names and placeholders only
 ```
@@ -258,9 +255,9 @@ Known limitations (in-memory rate limiter, stateless JWT, no `script-src` CSP): 
 ## Documentation
 
 - [Project report](docs/project-report.md) ([PDF](docs/TalentMatch_Project_Report.pdf)) — all 14 required sections, team contribution
-- [Course requirements, answered](docs/handout-requirements.md) — §1–§18 of the handout with evidence
-- [Hiring statistics report](docs/company-statistics.md) — TalentMatch as a company, with charts
-- [Use case diagram](docs/use-case-diagram.png) · [ER diagram, Chen notation](docs/er-diagram-chen.png)
+- [Course requirements, answered](new_changes/handout-requirements.md) — §1–§18 of the handout with evidence
+- [Hiring statistics report](new_changes/company-statistics.md) — TalentMatch as a company, with charts
+- [Use case diagram](new_changes/use-case-diagram.png) · [ER diagram, Chen notation](new_changes/er-diagram-chen.png)
 - [Viva demo script](docs/viva-demo-script.md) — 10-minute demo, live psql queries, 30 likely questions
 - [ER diagram, column level](docs/er-diagram.md) ([image](docs/er-diagram.png))
 - [Relational schema](docs/relational-schema.md) — tables, FK delete rules, indexes, normalisation
