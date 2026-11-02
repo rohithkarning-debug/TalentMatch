@@ -10,7 +10,8 @@ TalentMatch is a recruitment system for companies that receive many resumes per 
 
 | Document | What it covers |
 |---|---|
-| [Project report](docs/project-report.md) ([PDF](docs/TalentMatch_Project_Report.pdf)) | All 14 documentation sections required by the course |
+| [DBMS Project Report (PDF)](docs/TalentMatch_DBMS_Project_Report.pdf) | Final submission report: SQL and vector commands, project tree, screenshots, rubric status |
+| [Project report](docs/project-report.md) | All 14 documentation sections required by the course |
 | [Course requirements, answered](new_changes/handout-requirements.md) | Every handout requirement (§1–§18) with where it is met in this repository |
 | [Hiring statistics report](new_changes/company-statistics.md) | TalentMatch treated as a company: funnel, speed, salaries, skills, recommendations |
 
@@ -254,7 +255,8 @@ Known limitations (in-memory rate limiter, stateless JWT, no `script-src` CSP): 
 
 ## Documentation
 
-- [Project report](docs/project-report.md) ([PDF](docs/TalentMatch_Project_Report.pdf)) — all 14 required sections, team contribution
+- [DBMS Project Report (PDF)](docs/TalentMatch_DBMS_Project_Report.pdf) — final submission report
+- [Project report](docs/project-report.md) — all 14 required sections, team contribution
 - [Course requirements, answered](new_changes/handout-requirements.md) — §1–§18 of the handout with evidence
 - [Hiring statistics report](new_changes/company-statistics.md) — TalentMatch as a company, with charts
 - [Use case diagram](new_changes/use-case-diagram.png) · [ER diagram, Chen notation](new_changes/er-diagram-chen.png)
